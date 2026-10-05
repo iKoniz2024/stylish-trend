@@ -1,0 +1,64 @@
+require("dotenv").config();
+
+const bcrypt = require("bcrypt");
+const { connectDB, getDB } = require("../config/db");
+
+const seedAdmin = async () => {
+    try {
+        await connectDB();
+
+        const db = getDB();
+        const usersCollection = db.collection("users");
+
+        const existingAdmin = await usersCollection.findOne({
+            email: process.env.ADMIN_EMAIL
+        });
+
+        const hashedPassword = await bcrypt.hash(
+            process.env.ADMIN_PASSWORD,
+            10
+        );
+
+        if (existingAdmin) {
+            await usersCollection.updateOne(
+                { _id: existingAdmin._id },
+                {
+                    $set: {
+                        password: hashedPassword,
+                        role: "admin",
+                        isVerified: true,
+                        updatedAt: new Date()
+                    }
+                }
+            );
+            console.log("Admin password updated successfully.");
+            process.exit(0);
+        }
+
+        await usersCollection.insertOne({
+            name: "Admin",
+            email: process.env.ADMIN_EMAIL,
+            password: hashedPassword,
+            profilePhoto: "",
+            phone: "",
+            address: "",
+            role: "admin",
+            isVerified: true,
+            createdAt: new Date(),
+            updatedAt: new Date()
+        });
+
+        console.log("Admin created successfully.");
+
+        process.exit();
+
+    } catch (error) {
+
+        console.log(error);
+
+        process.exit(1);
+
+    }
+};
+
+seedAdmin();
