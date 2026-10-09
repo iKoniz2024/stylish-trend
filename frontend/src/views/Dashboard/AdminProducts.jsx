@@ -104,13 +104,11 @@ export default function AdminProducts({ children }) {
   const { data, isLoading } = useQuery({
     queryKey: ["admin-products"],
     queryFn: getProducts,
-    staleTime: 5 * 60 * 1000,
   });
 
   const { data: categoriesData } = useQuery({
     queryKey: ["categories"],
     queryFn: getCategories,
-    staleTime: 5 * 60 * 1000,
   });
 
   const categories = categoriesData ?? [];
@@ -220,23 +218,31 @@ export default function AdminProducts({ children }) {
     [selectedCategorySlug, categories]
   );
 
+  const updateProductCaches = (updaterFn) => {
+    queryClient.setQueryData(["admin-products"], updaterFn);
+    queryClient.setQueryData(["products"], updaterFn);
+  };
+
   const createMutation = useMutation({
     mutationFn: createProduct,
     onSuccess: (res, variables) => {
       toast.success("Product created successfully");
-      queryClient.setQueryData(["admin-products"], (old) => {
-        if (!old) return old;
-        const newProduct = {
-          _id: res?.insertedId || res?._id || Date.now().toString(),
-          ...variables,
-        };
+      const newProduct = {
+        _id: res?.insertedId || res?._id || Date.now().toString(),
+        ...variables,
+      };
+      updateProductCaches((old) => {
+        if (!old) return { products: [newProduct], totalProducts: 1 };
+        if (Array.isArray(old)) return [newProduct, ...old];
         return {
           ...old,
           products: [newProduct, ...(old.products || [])],
           totalProducts: (old.totalProducts || 0) + 1,
         };
       });
-      queryClient.invalidateQueries();
+      queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      queryClient.invalidateQueries({ queryKey: ["categories-with-counts"] });
       setShowForm(false);
       resetForm();
     },
@@ -258,20 +264,29 @@ export default function AdminProducts({ children }) {
     mutationFn: deleteProduct,
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: ["admin-products"] });
-      const previous = queryClient.getQueryData(["admin-products"]);
-      queryClient.setQueryData(["admin-products"], (old) => {
-        if (!old || !old.products) return old;
+      await queryClient.cancelQueries({ queryKey: ["products"] });
+      const previousAdmin = queryClient.getQueryData(["admin-products"]);
+      const previousPublic = queryClient.getQueryData(["products"]);
+
+      const removeProduct = (old) => {
+        if (!old) return old;
+        if (Array.isArray(old)) return old.filter((p) => p._id !== id);
         return {
           ...old,
-          products: old.products.filter((p) => p._id !== id),
+          products: (old.products || []).filter((p) => p._id !== id),
           totalProducts: Math.max(0, (old.totalProducts || 0) - 1),
         };
-      });
-      return { previous };
+      };
+
+      updateProductCaches(removeProduct);
+      return { previousAdmin, previousPublic };
     },
     onError: (err, id, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData(["admin-products"], context.previous);
+      if (context?.previousAdmin) {
+        queryClient.setQueryData(["admin-products"], context.previousAdmin);
+      }
+      if (context?.previousPublic) {
+        queryClient.setQueryData(["products"], context.previousPublic);
       }
       toast.error(err?.response?.data?.message || "Failed to delete product");
     },
@@ -280,7 +295,9 @@ export default function AdminProducts({ children }) {
       setDeletingId(null);
     },
     onSettled: () => {
-      queryClient.invalidateQueries();
+      queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      queryClient.invalidateQueries({ queryKey: ["categories-with-counts"] });
     },
   });
 

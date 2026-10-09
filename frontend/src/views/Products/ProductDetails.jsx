@@ -468,10 +468,7 @@ export default function ProductDetails({ children }) {
                       type="button"
                       disabled={product.stock === 0}
                       onClick={async () => {
-                        const ok = await handleAddToCart();
-                        if (ok) {
-                          window.dispatchEvent(new Event("open-cart-drawer"));
-                        }
+                        await handleAddToCart();
                       }}
                       className="flex-1 rounded-full bg-secondary hover:bg-secondary/80 text-secondary-foreground py-3 text-sm font-extrabold transition-all border border-border active:scale-[0.98] cursor-pointer"
                     >

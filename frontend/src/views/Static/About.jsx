@@ -94,7 +94,7 @@ export default function About({ children }) {
             At <strong className="text-foreground">{siteName}</strong>, we believe shopping should be simple, convenient, and enjoyable. Our goal is to bring useful, trendy, and value-for-money products together in one place—so you can easily find what you need for yourself, your family, and your home.
           </p>
           <p className="mt-3 text-sm sm:text-base text-muted-foreground leading-relaxed">
-            From Home & Living, Kitchen & Dining, Baby & Kids, Fashion, Beauty & Personal Care, Medical Care, Electronics & Gadgets & Others to everyday essentials and exciting deals, we are continuously expanding our collection to meet the diverse needs of our customers.
+            From Men's & Women's Fashion, Premium Apparel, Footwear, Bags & Wallets to Fine Jewelry, Watches, Sunglasses & Accessories, we are continuously expanding our collection to bring you the finest style trends.
           </p>
           <p className="mt-3 text-sm sm:text-base text-muted-foreground leading-relaxed">
             We focus on carefully selected products, competitive pricing, convenient online shopping, responsive customer support, and reliable delivery across Bangladesh. We want every customer to shop with confidence and have a smooth experience from browsing to receiving an order.

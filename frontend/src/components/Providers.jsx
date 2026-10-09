@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import AuthProvider from "@/context/AuthProvider";
 import { CartProvider } from "@/context/CartContext";
@@ -9,6 +9,7 @@ import { Toaster } from "react-hot-toast";
 import { HelmetProvider } from "react-helmet-async";
 import useSettings from "@/hooks/useSettings";
 import MetaPixel from "@/components/MetaPixel";
+import GlobalTopLoader from "@/components/ui/GlobalTopLoader";
 
 function DynamicFaviconUpdater() {
   useSettings();
@@ -19,7 +20,7 @@ export default function Providers({ children }) {
   const [queryClient] = useState(() => new QueryClient({
     defaultOptions: {
       queries: {
-        staleTime: 1000 * 60 * 5,
+        staleTime: 0,
         gcTime: 1000 * 60 * 10,
         refetchOnWindowFocus: false,
       },
@@ -34,6 +35,9 @@ export default function Providers({ children }) {
             <QueryClientProvider client={queryClient}>
               <DynamicFaviconUpdater />
               <MetaPixel />
+              <Suspense fallback={null}>
+                <GlobalTopLoader />
+              </Suspense>
               {children}
               <Toaster
                 position="top-right"

@@ -240,16 +240,7 @@ export default function OrderDetails({ children }) {
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          {/* Email Invoice Spam Notice Banner */}
-          <div className="mb-4 flex items-start gap-3 rounded-xl border border-[#FBBF24]/30 bg-[#FFFBEB] p-4 text-sm text-foreground dark:border-[#FBBF24]/30 dark:bg-[#FBBF24]/10">
-            <Mail className="mt-0.5 size-5 shrink-0 text-[#D97706] dark:text-[#FBBF24]" />
-            <div>
-              <p className="font-bold text-[#D97706] dark:text-[#FBBF24]">Email Invoice Notice:</p>
-              <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">
-                The cash invoice for your order has been sent to your email. If you don't see it directly in your inbox, please check your <strong>Spam / Junk</strong> folder.
-              </p>
-            </div>
-          </div>
+
 
           {/* Header */}
           <div className="mb-6 overflow-hidden rounded-2xl border border-border bg-card shadow-lg shadow-black/5">

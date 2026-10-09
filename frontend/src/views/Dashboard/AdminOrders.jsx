@@ -44,17 +44,27 @@ export default function AdminOrders({ children }) {
   const { data, isLoading } = useQuery({
     queryKey: ["admin-orders"],
     queryFn: getAllOrders,
-    staleTime: 5 * 60 * 1000,
   });
 
   const orders = Array.isArray(data) ? data : data?.orders ?? [];
+
+  const syncOrderCaches = (updaterFn) => {
+    queryClient.setQueryData(["admin-orders"], updaterFn);
+    queryClient.setQueryData(["orders"], updaterFn);
+    queryClient.setQueryData(["vendorOrders"], updaterFn);
+  };
 
   const statusMutation = useMutation({
     mutationFn: ({ id, orderStatus }) => updateOrderStatus(id, orderStatus),
     onMutate: async ({ id, orderStatus }) => {
       await queryClient.cancelQueries({ queryKey: ["admin-orders"] });
-      const previousOrders = queryClient.getQueryData(["admin-orders"]);
-      queryClient.setQueryData(["admin-orders"], (old) => {
+      await queryClient.cancelQueries({ queryKey: ["orders"] });
+      await queryClient.cancelQueries({ queryKey: ["vendorOrders"] });
+      const previousAdmin = queryClient.getQueryData(["admin-orders"]);
+      const previousOrders = queryClient.getQueryData(["orders"]);
+      const previousVendor = queryClient.getQueryData(["vendorOrders"]);
+
+      const updateStatus = (old) => {
         if (!old) return old;
         if (Array.isArray(old)) {
           return old.map((o) => (o._id === id ? { ...o, orderStatus } : o));
@@ -63,20 +73,31 @@ export default function AdminOrders({ children }) {
           ...old,
           orders: old.orders?.map((o) => (o._id === id ? { ...o, orderStatus } : o)) ?? [],
         };
-      });
-      return { previousOrders };
+      };
+
+      syncOrderCaches(updateStatus);
+      queryClient.setQueryData(["admin-order", id], (old) => old ? { ...old, orderStatus } : old);
+      queryClient.setQueryData(["order", id], (old) => old ? { ...old, orderStatus } : old);
+
+      return { previousAdmin, previousOrders, previousVendor };
     },
     onError: (err, variables, context) => {
-      if (context?.previousOrders) {
-        queryClient.setQueryData(["admin-orders"], context.previousOrders);
-      }
+      if (context?.previousAdmin) queryClient.setQueryData(["admin-orders"], context.previousAdmin);
+      if (context?.previousOrders) queryClient.setQueryData(["orders"], context.previousOrders);
+      if (context?.previousVendor) queryClient.setQueryData(["vendorOrders"], context.previousVendor);
       toast.error(err?.response?.data?.message || "Failed to update status");
     },
     onSuccess: () => {
       toast.success("Order status updated");
     },
-    onSettled: () => {
+    onSettled: (data, error, variables) => {
       queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["vendorOrders"] });
+      if (variables?.id) {
+        queryClient.invalidateQueries({ queryKey: ["admin-order", variables.id] });
+        queryClient.invalidateQueries({ queryKey: ["order", variables.id] });
+      }
     },
   });
 
@@ -84,8 +105,13 @@ export default function AdminOrders({ children }) {
     mutationFn: deleteOrder,
     onMutate: async (deletedId) => {
       await queryClient.cancelQueries({ queryKey: ["admin-orders"] });
-      const previousOrders = queryClient.getQueryData(["admin-orders"]);
-      queryClient.setQueryData(["admin-orders"], (old) => {
+      await queryClient.cancelQueries({ queryKey: ["orders"] });
+      await queryClient.cancelQueries({ queryKey: ["vendorOrders"] });
+      const previousAdmin = queryClient.getQueryData(["admin-orders"]);
+      const previousOrders = queryClient.getQueryData(["orders"]);
+      const previousVendor = queryClient.getQueryData(["vendorOrders"]);
+
+      const removeOrder = (old) => {
         if (!old) return old;
         if (Array.isArray(old)) {
           return old.filter((o) => o._id !== deletedId);
@@ -95,13 +121,15 @@ export default function AdminOrders({ children }) {
           orders: (old.orders || []).filter((o) => o._id !== deletedId),
           totalOrders: Math.max(0, (old.totalOrders || 0) - 1),
         };
-      });
-      return { previousOrders };
+      };
+
+      syncOrderCaches(removeOrder);
+      return { previousAdmin, previousOrders, previousVendor };
     },
     onError: (err, deletedId, context) => {
-      if (context?.previousOrders) {
-        queryClient.setQueryData(["admin-orders"], context.previousOrders);
-      }
+      if (context?.previousAdmin) queryClient.setQueryData(["admin-orders"], context.previousAdmin);
+      if (context?.previousOrders) queryClient.setQueryData(["orders"], context.previousOrders);
+      if (context?.previousVendor) queryClient.setQueryData(["vendorOrders"], context.previousVendor);
       toast.error(err?.response?.data?.message || "Failed to delete order");
     },
     onSuccess: () => {
@@ -110,6 +138,8 @@ export default function AdminOrders({ children }) {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["vendorOrders"] });
     },
   });
 

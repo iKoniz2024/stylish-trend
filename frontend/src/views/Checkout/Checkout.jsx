@@ -24,7 +24,7 @@ import { event as trackPixelEvent } from "@/utils/fpixel";
 const checkoutSchema = z.object({
   fullName: z.string().min(2, "Full name must be at least 2 characters"),
   phone: z.string().min(11, "Phone must be at least 11 characters"),
-  email: z.string().min(1, "Email address is required").email("Invalid email address"),
+  email: z.string().optional().default("").refine((val) => !val || z.string().email().safeParse(val).success, { message: "Invalid email address" }),
   address: z.string().min(5, "Address must be at least 5 characters"),
   city: z.string().min(2, "City must be at least 2 characters"),
   deliveryArea: z.enum(["inside_dhaka", "outside_dhaka"], { required_error: "Please select a delivery area" }),
@@ -119,7 +119,7 @@ export default function Checkout({ children }) {
         value: Number(total) || 0,
         currency: "BDT",
       });
-      toast.success("Order placed successfully! Please check your email (Inbox or Spam) for invoice.", { duration: 6000 });
+      toast.success("Order placed successfully!");
       clearLocalCart();
       refetchCartCount(0);
       if (data?.insertedId) {
@@ -252,7 +252,7 @@ export default function Checkout({ children }) {
                   </div>
                   <div className="sm:col-span-2 w-full">
                     <label className="mb-1.5 block text-sm font-medium text-foreground">
-                      Email (for invoice) *
+                      Email (Optional - for invoice)
                     </label>
                     <Input
                       {...register("email")}

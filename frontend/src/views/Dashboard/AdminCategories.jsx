@@ -82,7 +82,6 @@ export default function AdminCategories({ children }) {
   const { data, isLoading } = useQuery({
     queryKey: ["admin-categories"],
     queryFn: getCategories,
-    staleTime: 5 * 60 * 1000,
   });
 
   const categories = data ?? [];
@@ -124,20 +123,43 @@ export default function AdminCategories({ children }) {
     name: "attributes",
   });
 
+  const updateCategoryCaches = (updaterFn) => {
+    queryClient.setQueryData(["admin-categories"], updaterFn);
+    queryClient.setQueryData(["categories"], updaterFn);
+  };
+
   const createMutation = useMutation({
     mutationFn: createCategory,
     onSuccess: (res, variables) => {
       toast.success("Category created");
-      queryClient.setQueryData(["admin-categories"], (old) => {
-        const newCategory = {
-          _id: res?.insertedId || res?._id || Date.now().toString(),
-          ...variables,
-        };
-        return [...(old || []), newCategory];
+      const newCategory = res?.category || {
+        _id: res?.insertedId || res?.category?._id || Date.now().toString(),
+        ...variables,
+        attributes: variables.attributes || [],
+        children: variables.children || [],
+      };
+      updateCategoryCaches((old) => {
+        const currentOld = Array.isArray(old) ? old : [];
+        if (variables.parentId) {
+          const insertChildInTree = (items) => {
+            return items.map((item) => {
+              if (String(item._id) === String(variables.parentId) || String(item.slug) === String(variables.parentId)) {
+                return { ...item, children: [...(item.children || []), newCategory] };
+              }
+              if (Array.isArray(item.children) && item.children.length > 0) {
+                return { ...item, children: insertChildInTree(item.children) };
+              }
+              return item;
+            });
+          };
+          return insertChildInTree(currentOld);
+        }
+        return [...currentOld, newCategory];
       });
       queryClient.invalidateQueries({ queryKey: ["admin-categories"] });
       queryClient.invalidateQueries({ queryKey: ["categories"] });
       queryClient.invalidateQueries({ queryKey: ["categories-with-counts"] });
+      queryClient.invalidateQueries({ queryKey: ["topCategoriesWithCounts"] });
       setShowForm(false);
       resetCreate();
       setCreateImage("");
@@ -158,12 +180,46 @@ export default function AdminCategories({ children }) {
 
   const updateMutation = useMutation({
     mutationFn: ({ id, payload }) => updateCategory(id, payload),
-    onSuccess: (res) => {
+    onSuccess: (res, variables) => {
       toast.success(res?.message || "Category updated successfully");
+      const freshCat = res?.category;
+      updateCategoryCaches((old) => {
+        if (!Array.isArray(old)) return old;
+        const targetIdStr = String(variables.id);
+        const targetSlug = variables.payload?.slug;
+        const newAttrs = Array.isArray(variables.payload?.attributes) ? variables.payload.attributes : undefined;
+
+        const updateNodeInTree = (items) => {
+          return items.map((c) => {
+            const isTarget = String(c._id) === targetIdStr || 
+                             String(c.slug) === targetIdStr || 
+                             String(c.id) === targetIdStr ||
+                             (targetSlug && c.slug === targetSlug);
+
+            let updatedCat = c;
+            if (isTarget) {
+              updatedCat = {
+                ...c,
+                ...variables.payload,
+                ...(freshCat || {}),
+                attributes: newAttrs !== undefined ? newAttrs : (c.attributes || []),
+                slug: variables.payload.slug || c.slug,
+              };
+            }
+            if (Array.isArray(c.children) && c.children.length > 0) {
+              updatedCat = { ...updatedCat, children: updateNodeInTree(c.children) };
+            }
+            return updatedCat;
+          });
+        };
+        return updateNodeInTree(old);
+      });
       queryClient.invalidateQueries({ queryKey: ["admin-categories"] });
       queryClient.invalidateQueries({ queryKey: ["categories"] });
       queryClient.invalidateQueries({ queryKey: ["categories-with-counts"] });
+      queryClient.invalidateQueries({ queryKey: ["topCategoriesWithCounts"] });
       setEditingId(null);
+      setShowEditModal(false);
       resetUpdate();
       setEditImage("");
     },
@@ -186,15 +242,30 @@ export default function AdminCategories({ children }) {
     mutationFn: deleteCategory,
     onMutate: async (deletedId) => {
       await queryClient.cancelQueries({ queryKey: ["admin-categories"] });
-      const previousCategories = queryClient.getQueryData(["admin-categories"]);
-      queryClient.setQueryData(["admin-categories"], (old) =>
-        (old || []).filter((c) => String(c._id) !== String(deletedId))
-      );
-      return { previousCategories };
+      await queryClient.cancelQueries({ queryKey: ["categories"] });
+      const previousAdminCats = queryClient.getQueryData(["admin-categories"]);
+      const previousCats = queryClient.getQueryData(["categories"]);
+      const targetStr = String(deletedId);
+
+      const removeFromTree = (items) => {
+        if (!Array.isArray(items)) return [];
+        return items
+          .filter((c) => String(c._id) !== targetStr && String(c.slug) !== targetStr && String(c.id) !== targetStr)
+          .map((c) => ({
+            ...c,
+            children: Array.isArray(c.children) ? removeFromTree(c.children) : [],
+          }));
+      };
+
+      updateCategoryCaches((old) => removeFromTree(old));
+      return { previousAdminCats, previousCats };
     },
     onError: (err, deletedId, context) => {
-      if (context?.previousCategories) {
-        queryClient.setQueryData(["admin-categories"], context.previousCategories);
+      if (context?.previousAdminCats) {
+        queryClient.setQueryData(["admin-categories"], context.previousAdminCats);
+      }
+      if (context?.previousCats) {
+        queryClient.setQueryData(["categories"], context.previousCats);
       }
       toast.error(err?.response?.data?.message || "Failed to delete category");
     },
@@ -206,6 +277,7 @@ export default function AdminCategories({ children }) {
       queryClient.invalidateQueries({ queryKey: ["admin-categories"] });
       queryClient.invalidateQueries({ queryKey: ["categories"] });
       queryClient.invalidateQueries({ queryKey: ["categories-with-counts"] });
+      queryClient.invalidateQueries({ queryKey: ["topCategoriesWithCounts"] });
     },
   });
 
@@ -266,19 +338,20 @@ export default function AdminCategories({ children }) {
   };
 
   const onUpdateSubmit = (formData) => {
-    const payload = {};
-    if (formData.name) payload.name = formData.name;
-    if (formData.slug) payload.slug = formData.slug.toLowerCase().replace(/\s+/g, "-");
-    payload.parentId = formData.parentId ? String(formData.parentId) : null;
-    if (editImage !== undefined) payload.image = editImage;
-    if (formData.attributes) payload.attributes = processAttributes(formData.attributes);
-    if (formData.children) {
-      payload.children = formData.children.map((child) => ({
+    const payload = {
+      name: formData.name,
+      slug: formData.slug ? formData.slug.toLowerCase().replace(/\s+/g, "-") : "",
+      parentId: formData.parentId ? String(formData.parentId) : null,
+      image: editImage !== undefined ? editImage : "",
+      attributes: processAttributes(formData.attributes),
+      children: (formData.children || []).map((child) => ({
+        ...child,
         name: child.name,
-        slug: child.slug.toLowerCase().replace(/\s+/g, "-"),
+        slug: child.slug ? child.slug.toLowerCase().replace(/\s+/g, "-") : "",
+        attributes: Array.isArray(child.attributes) ? child.attributes : [],
         categories: child.categories || [],
-      }));
-    }
+      })),
+    };
     updateMutation.mutate({ id: editingId, payload });
   };
 
@@ -305,7 +378,7 @@ export default function AdminCategories({ children }) {
   };
 
   const startEdit = (cat) => {
-    setEditingId(cat._id);
+    setEditingId(cat._id || cat.slug);
     setEditImage(cat.image || "");
     const parentIdVal = cat.parentId ? (typeof cat.parentId === "object" ? cat.parentId._id : cat.parentId) : "";
     resetUpdate({
@@ -321,13 +394,25 @@ export default function AdminCategories({ children }) {
         useAsVariant: Boolean(a.useAsVariant),
       })),
       children: (cat.children ?? []).map((child) => ({
+        ...child,
         name: child.name,
         slug: child.slug,
+        attributes: child.attributes || [],
         categories: child.categories ?? [],
       })),
     });
     setShowEditModal(true);
   };
+
+  const topCategoriesCount = (categories || []).filter((c) => {
+    const pId = typeof c.parentId === "object" ? c.parentId?._id : c.parentId;
+    return !pId;
+  }).length;
+
+  const subCategoriesCount = (categories || []).filter((c) => {
+    const pId = typeof c.parentId === "object" ? c.parentId?._id : c.parentId;
+    return Boolean(pId);
+  }).length;
 
   return (
     <div className="space-y-6">
@@ -337,7 +422,7 @@ export default function AdminCategories({ children }) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-            Categories Hierarchy ({categories.length})
+            Categories Hierarchy ({topCategoriesCount} Main Categories, {subCategoriesCount} Sub-Categories)
           </h1>
           <p className="text-xs text-muted-foreground mt-0.5">
             Manage main categories and nested sub-categories in expandable tree view
@@ -389,7 +474,7 @@ export default function AdminCategories({ children }) {
                     <label className="mb-1 block text-sm font-medium text-foreground">Name *</label>
                     <Input
                       {...regCreate("name")}
-                      placeholder="e.g. Fashion & Apparel, Electronics, Home & Living"
+                      placeholder="e.g. Menswear, Womenswear, Bags & Accessories"
                       className={errCreate.name ? "border-destructive" : ""}
                       onChange={(e) => {
                         regCreate("name").onChange(e);
@@ -431,7 +516,7 @@ export default function AdminCategories({ children }) {
                       ))}
                   </select>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Keep as <strong>Main Category</strong> for top categories (like Clothing, Toys). Select a parent only if this is a sub-category.
+                    Keep as <strong>Main Category</strong> for top categories (like Menswear, Womenswear, Accessories). Select a parent only if this is a sub-category.
                   </p>
                 </div>
 
@@ -478,18 +563,20 @@ export default function AdminCategories({ children }) {
                         <Plus className="size-3 mr-1" /> Custom Attribute
                       </Button>
                     </div>
-                    
+
                     {/* Quick Add Presets (Multi-Vendor General Store) */}
                     <div className="flex flex-wrap items-center gap-1.5 pt-1">
                       <span className="text-[11px] font-semibold text-muted-foreground mr-1">Quick Presets:</span>
                       <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 bg-background hover:bg-primary/10 text-pink-600 border-pink-200 hover:bg-pink-50" onClick={() => createAttrAppend({ key: "size", label: "Clothing Size", type: "multi-select", options: "S, M, L, XL, XXL, 3XL", required: false, unit: "", useAsVariant: true })}>+ Clothing Size (S-3XL)</Button>
-                      <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 bg-background hover:bg-primary/10 text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => createAttrAppend({ key: "color", label: "Color", type: "multi-select", options: "Black, White, Red, Blue, Navy, Green, Grey, Gold", required: false, unit: "", useAsVariant: true })}>+ Color</Button>
+                      <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 bg-background hover:bg-primary/10 text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => createAttrAppend({ key: "color", label: "Color", type: "multi-select", options: "Black, White, Red, Blue, Navy, Green, Grey, Gold, Silver", required: false, unit: "", useAsVariant: true })}>+ Color</Button>
                       <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 bg-background hover:bg-primary/10 text-purple-600 border-purple-200 hover:bg-purple-50" onClick={() => createAttrAppend({ key: "shoe_size", label: "Shoe Size", type: "multi-select", options: "EU 38, EU 39, EU 40, EU 41, EU 42, EU 43, EU 44, EU 45", required: false, unit: "", useAsVariant: true })}>+ Shoe Size (38-45)</Button>
-                      <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 bg-background hover:bg-primary/10 text-amber-600 border-amber-200 hover:bg-amber-50" onClick={() => createAttrAppend({ key: "ram", label: "RAM / Memory", type: "select", options: "2GB, 4GB, 6GB, 8GB, 12GB, 16GB, 32GB", required: false, unit: "", useAsVariant: true })}>+ RAM</Button>
-                      <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 bg-background hover:bg-primary/10 text-indigo-600 border-indigo-200 hover:bg-indigo-50" onClick={() => createAttrAppend({ key: "storage", label: "Storage (ROM)", type: "select", options: "64GB, 128GB, 256GB, 512GB, 1TB", required: false, unit: "", useAsVariant: true })}>+ Storage</Button>
+                      <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 bg-background hover:bg-primary/10 text-violet-600 border-violet-200 hover:bg-violet-50" onClick={() => createAttrAppend({ key: "accessory_type", label: "Accessory Type", type: "select", options: "Bags & Wallets, Jewelry & Ornaments, Watches, Belts, Sunglasses, Hats & Caps, Scarves, Hair Accessories", required: false, unit: "", useAsVariant: true })}>+ Accessory Type</Button>
+                      <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 bg-background hover:bg-primary/10 text-teal-600 border-teal-200 hover:bg-teal-50" onClick={() => createAttrAppend({ key: "gender", label: "Target / Gender", type: "select", options: "Men, Women, Unisex, Kids, Baby", required: false, unit: "", useAsVariant: false })}>+ Target / Gender</Button>
+                      <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 bg-background hover:bg-primary/10 text-amber-600 border-amber-200 hover:bg-amber-50" onClick={() => createAttrAppend({ key: "season", label: "Season / Occasion", type: "select", options: "Summer, Winter, Eid Collection, Party Wear, Casual, Formal", required: false, unit: "", useAsVariant: false })}>+ Season/Occasion</Button>
+                      <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 bg-background hover:bg-primary/10 text-indigo-600 border-indigo-200 hover:bg-indigo-50" onClick={() => createAttrAppend({ key: "fit", label: "Fit / Cut Style", type: "select", options: "Slim Fit, Regular Fit, Oversized, Loose Fit, Tailored", required: false, unit: "", useAsVariant: true })}>+ Fit/Style</Button>
                       <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 bg-background hover:bg-primary/10 text-emerald-600 border-emerald-200 hover:bg-emerald-50" onClick={() => createAttrAppend({ key: "warranty", label: "Warranty", type: "select", options: "No Warranty, 6 Months, 1 Year, 2 Years, 3 Years", required: false, unit: "", useAsVariant: false })}>+ Warranty</Button>
                       <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 bg-background hover:bg-primary/10" onClick={() => createAttrAppend({ key: "brand", label: "Brand", type: "text", options: "", required: false, unit: "", useAsVariant: false })}>+ Brand</Button>
-                      <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 bg-background hover:bg-primary/10" onClick={() => createAttrAppend({ key: "fabric", label: "Fabric / Material", type: "select", options: "100% Cotton, Linen, Denim, Silk, Polyester, Leather, Metal, Plastic", required: false, unit: "", useAsVariant: false })}>+ Fabric/Material</Button>
+                      <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 bg-background hover:bg-primary/10" onClick={() => createAttrAppend({ key: "fabric", label: "Fabric / Material", type: "select", options: "100% Cotton, Linen, Denim, Silk, Polyester, Leather, Metal, Gold, Silver", required: false, unit: "", useAsVariant: false })}>+ Fabric/Material</Button>
                       <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 bg-background hover:bg-primary/10" onClick={() => createAttrAppend({ key: "weight", label: "Net Weight / Volume", type: "text", options: "", required: false, unit: "kg", useAsVariant: false })}>+ Weight / Volume</Button>
                       <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 bg-background hover:bg-primary/10 text-rose-600 border-rose-200 hover:bg-rose-50" onClick={() => createAttrAppend({ key: "baby_size", label: "Baby / Kids Size", type: "multi-select", options: "0-3M, 3-6M, 6-12M, 1-2Y, 2-4Y, 4-6Y, 6-8Y", required: false, unit: "", useAsVariant: true })}>+ Baby/Kids Size</Button>
                     </div>
@@ -508,6 +595,7 @@ export default function AdminCategories({ children }) {
                       const needsOptions = currentType === "select" || currentType === "multi-select";
                       return (
                         <div key={field.id} className="relative rounded-xl border border-border/80 bg-background p-3.5 space-y-3 shadow-xs">
+                          <input type="hidden" {...regCreate(`attributes.${index}.key`)} />
                           <div className="flex items-center justify-between gap-2 border-b border-border/40 pb-2">
                             <div className="flex items-center gap-2">
                               <span className="text-xs font-bold text-foreground">#{index + 1}</span>
@@ -544,7 +632,7 @@ export default function AdminCategories({ children }) {
                                   regCreate(`attributes.${index}.label`).onChange(e);
                                   const val = e.target.value;
                                   const generatedKey = val.toLowerCase().trim().replace(/[^a-z0-9_]/g, "_").replace(/\s+/g, "_");
-                                  regCreate(`attributes.${index}.key`).onChange({ target: { name: `attributes.${index}.key`, value: generatedKey } });
+                                  setValueCreate(`attributes.${index}.key`, generatedKey, { shouldDirty: true });
                                 }}
                               />
                             </div>
@@ -641,7 +729,7 @@ export default function AdminCategories({ children }) {
                     <label className="mb-1 block text-sm font-medium text-foreground">Name *</label>
                     <Input
                       {...regUpdate("name")}
-                      placeholder="e.g. Fashion & Apparel, Electronics, Home & Living"
+                      placeholder="e.g. Menswear, Womenswear, Bags & Accessories"
                       className={errUpdate.name ? "border-destructive" : ""}
                       onChange={(e) => {
                         regUpdate("name").onChange(e);
@@ -734,8 +822,8 @@ export default function AdminCategories({ children }) {
                       <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 bg-background hover:bg-primary/10 text-pink-600 border-pink-200 hover:bg-pink-50" onClick={() => updateAttrAppend({ key: "size", label: "Clothing Size", type: "multi-select", options: "S, M, L, XL, XXL, 3XL", required: false, unit: "", useAsVariant: true })}>+ Clothing Size (S-3XL)</Button>
                       <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 bg-background hover:bg-primary/10 text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => updateAttrAppend({ key: "color", label: "Color", type: "multi-select", options: "Black, White, Red, Blue, Navy, Green, Grey, Gold", required: false, unit: "", useAsVariant: true })}>+ Color</Button>
                       <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 bg-background hover:bg-primary/10 text-purple-600 border-purple-200 hover:bg-purple-50" onClick={() => updateAttrAppend({ key: "shoe_size", label: "Shoe Size", type: "multi-select", options: "EU 38, EU 39, EU 40, EU 41, EU 42, EU 43, EU 44, EU 45", required: false, unit: "", useAsVariant: true })}>+ Shoe Size (38-45)</Button>
-                      <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 bg-background hover:bg-primary/10 text-amber-600 border-amber-200 hover:bg-amber-50" onClick={() => updateAttrAppend({ key: "ram", label: "RAM / Memory", type: "select", options: "2GB, 4GB, 6GB, 8GB, 12GB, 16GB, 32GB", required: false, unit: "", useAsVariant: true })}>+ RAM</Button>
-                      <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 bg-background hover:bg-primary/10 text-indigo-600 border-indigo-200 hover:bg-indigo-50" onClick={() => updateAttrAppend({ key: "storage", label: "Storage (ROM)", type: "select", options: "64GB, 128GB, 256GB, 512GB, 1TB", required: false, unit: "", useAsVariant: true })}>+ Storage</Button>
+                      <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 bg-background hover:bg-primary/10 text-amber-600 border-amber-200 hover:bg-amber-50" onClick={() => updateAttrAppend({ key: "season", label: "Season / Occasion", type: "select", options: "Summer, Winter, Eid Collection, Party Wear, Casual, Formal", required: false, unit: "", useAsVariant: false })}>+ Season/Occasion</Button>
+                      <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 bg-background hover:bg-primary/10 text-indigo-600 border-indigo-200 hover:bg-indigo-50" onClick={() => updateAttrAppend({ key: "fit", label: "Fit / Cut Style", type: "select", options: "Slim Fit, Regular Fit, Oversized, Loose Fit, Tailored", required: false, unit: "", useAsVariant: true })}>+ Fit/Style</Button>
                       <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 bg-background hover:bg-primary/10 text-emerald-600 border-emerald-200 hover:bg-emerald-50" onClick={() => updateAttrAppend({ key: "warranty", label: "Warranty", type: "select", options: "No Warranty, 6 Months, 1 Year, 2 Years, 3 Years", required: false, unit: "", useAsVariant: false })}>+ Warranty</Button>
                       <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 bg-background hover:bg-primary/10" onClick={() => updateAttrAppend({ key: "brand", label: "Brand", type: "text", options: "", required: false, unit: "", useAsVariant: false })}>+ Brand</Button>
                       <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 bg-background hover:bg-primary/10" onClick={() => updateAttrAppend({ key: "fabric", label: "Fabric / Material", type: "select", options: "100% Cotton, Linen, Denim, Silk, Polyester, Leather, Metal, Plastic", required: false, unit: "", useAsVariant: false })}>+ Fabric/Material</Button>
@@ -757,6 +845,7 @@ export default function AdminCategories({ children }) {
                       const needsOptions = currentType === "select" || currentType === "multi-select";
                       return (
                         <div key={field.id} className="relative rounded-xl border border-border/80 bg-background p-3.5 space-y-3 shadow-xs">
+                          <input type="hidden" {...regUpdate(`attributes.${index}.key`)} />
                           <div className="flex items-center justify-between gap-2 border-b border-border/40 pb-2">
                             <div className="flex items-center gap-2">
                               <span className="text-xs font-bold text-foreground">#{index + 1}</span>
@@ -793,7 +882,7 @@ export default function AdminCategories({ children }) {
                                   regUpdate(`attributes.${index}.label`).onChange(e);
                                   const val = e.target.value;
                                   const generatedKey = val.toLowerCase().trim().replace(/[^a-z0-9_]/g, "_").replace(/\s+/g, "_");
-                                  regUpdate(`attributes.${index}.key`).onChange({ target: { name: `attributes.${index}.key`, value: generatedKey } });
+                                  setValueUpdate(`attributes.${index}.key`, generatedKey, { shouldDirty: true });
                                 }}
                               />
                             </div>
@@ -882,22 +971,45 @@ export default function AdminCategories({ children }) {
         });
 
         const getSubCategoriesForParent = (parent) => {
+          const parentIdStr = String(parent._id || parent.slug);
+
           const dbSubCats = categories.filter((c) => {
             const pId = typeof c.parentId === "object" ? c.parentId?._id : c.parentId;
-            return pId && (String(pId) === String(parent._id) || String(pId) === String(parent.slug));
+            return pId && (String(pId) === parentIdStr || String(pId) === String(parent._id) || String(pId) === String(parent.slug));
           });
 
           const embeddedChildren = (parent.children || []).map((child) => ({
             _id: child._id || child.id || child.slug,
             name: child.name,
             slug: child.slug,
-            attributes: child.attributes || [],
+            attributes: Array.isArray(child.attributes) ? child.attributes : [],
+            parentId: parent._id || parent.slug,
             isEmbedded: true,
           }));
 
-          const combined = [...dbSubCats];
+          const combined = [];
+          const processedKeys = new Set();
+
+          dbSubCats.forEach((dbSub) => {
+            const matchingEmbedded = (parent.children || []).find(
+              (ch) => ch.slug === dbSub.slug || String(ch._id || ch.id) === String(dbSub._id)
+            );
+
+            const attributes = matchingEmbedded && Array.isArray(matchingEmbedded.attributes)
+              ? matchingEmbedded.attributes
+              : (Array.isArray(dbSub.attributes) ? dbSub.attributes : []);
+
+            combined.push({
+              ...dbSub,
+              attributes,
+            });
+            if (dbSub.slug) processedKeys.add(dbSub.slug);
+            if (dbSub._id) processedKeys.add(String(dbSub._id));
+          });
+
           embeddedChildren.forEach((emb) => {
-            if (!combined.some((c) => c.slug === emb.slug || String(c._id) === String(emb._id))) {
+            const embIdStr = String(emb._id || emb.slug);
+            if (!processedKeys.has(emb.slug) && !processedKeys.has(embIdStr)) {
               combined.push(emb);
             }
           });
@@ -964,6 +1076,18 @@ export default function AdminCategories({ children }) {
                             <span>•</span>
                             <span className="font-semibold text-primary">{cat.attributes?.length ?? 0} dynamic attributes</span>
                           </div>
+                          {cat.attributes && cat.attributes.length > 0 && (
+                            <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                              {cat.attributes.map((attr, idx) => (
+                                <span key={idx} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-muted/80 text-foreground border border-border">
+                                  <span>{attr.label || attr.key}</span>
+                                  {attr.useAsVariant && (
+                                    <span className="text-[9px] bg-purple-500/20 text-purple-700 dark:text-purple-300 px-1 rounded font-bold">Variant</span>
+                                  )}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -1040,12 +1164,13 @@ export default function AdminCategories({ children }) {
 
                       <div className="border-l-2 border-primary/30 pl-3 sm:pl-4 space-y-2">
                         {subCats.map((sub) => {
-                          const isSubEditing = editingId === sub._id;
-                          const isSubDeleting = deletingId === sub._id;
+                          const subId = sub._id || sub.slug;
+                          const isSubEditing = editingId === subId;
+                          const isSubDeleting = deletingId === subId;
 
                           return (
                             <div
-                              key={sub._id || sub.slug}
+                              key={subId}
                               className="rounded-xl border border-border/70 bg-card p-3 shadow-2xs hover:border-primary/40 transition-colors"
                             >
                               <div className="flex items-center justify-between gap-3">
@@ -1070,56 +1195,66 @@ export default function AdminCategories({ children }) {
                                     <p className="text-[11px] text-muted-foreground mt-0.5">
                                       {sub.attributes?.length ?? 0} dynamic attributes
                                     </p>
+                                    {sub.attributes && sub.attributes.length > 0 && (
+                                      <div className="flex items-center gap-1 flex-wrap mt-1">
+                                        {sub.attributes.map((attr, idx) => (
+                                          <span key={idx} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-foreground border border-border/60">
+                                            <span>{attr.label || attr.key}</span>
+                                            {attr.useAsVariant && (
+                                              <span className="text-[8px] bg-purple-500/20 text-purple-700 dark:text-purple-300 px-0.5 rounded font-bold">Variant</span>
+                                            )}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
 
-                                {!sub.isEmbedded && (
-                                  <div className="flex items-center gap-1 shrink-0">
-                                    {!isSubDeleting && (
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-7 size-7 p-0"
-                                        disabled={editingId !== null && !isSubEditing}
-                                        onClick={() => (isSubEditing ? (setEditingId(null), resetUpdate()) : startEdit(sub))}
-                                      >
-                                        <Pencil className="size-3.5" />
-                                      </Button>
-                                    )}
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {!isSubDeleting && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 size-7 p-0"
+                                      disabled={editingId !== null && !isSubEditing}
+                                      onClick={() => (isSubEditing ? (setEditingId(null), resetUpdate()) : startEdit(sub))}
+                                    >
+                                      <Pencil className="size-3.5" />
+                                    </Button>
+                                  )}
 
-                                    {!isSubEditing && (
-                                      <>
-                                        {!isSubDeleting ? (
+                                  {!isSubEditing && (
+                                    <>
+                                      {!isSubDeleting ? (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-7 size-7 p-0 text-destructive hover:bg-destructive/10"
+                                          disabled={editingId !== null}
+                                          onClick={() => setDeletingId(subId)}
+                                        >
+                                          <Trash2 className="size-3.5" />
+                                        </Button>
+                                      ) : (
+                                        <div className="flex items-center gap-1.5 rounded-md border border-border bg-muted px-2 py-1">
+                                          <span className="text-[11px] text-foreground">Delete?</span>
                                           <Button
-                                            variant="ghost"
+                                            variant="destructive"
                                             size="sm"
-                                            className="h-7 size-7 p-0 text-destructive hover:bg-destructive/10"
-                                            disabled={editingId !== null}
-                                            onClick={() => setDeletingId(sub._id)}
+                                            className="h-6 px-2 text-[10px]"
+                                            disabled={deleteMutation.isPending}
+                                            onClick={() => deleteMutation.mutate(subId)}
                                           >
-                                            <Trash2 className="size-3.5" />
+                                            {deleteMutation.isPending ? "..." : "Yes"}
                                           </Button>
-                                        ) : (
-                                          <div className="flex items-center gap-1.5 rounded-md border border-border bg-muted px-2 py-1">
-                                            <span className="text-[11px] text-foreground">Delete?</span>
-                                            <Button
-                                              variant="destructive"
-                                              size="sm"
-                                              className="h-6 px-2 text-[10px]"
-                                              disabled={deleteMutation.isPending}
-                                              onClick={() => deleteMutation.mutate(sub._id)}
-                                            >
-                                              {deleteMutation.isPending ? "..." : "Yes"}
-                                            </Button>
-                                            <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[10px]" onClick={() => setDeletingId(null)}>
-                                              No
-                                            </Button>
-                                          </div>
-                                        )}
-                                      </>
-                                    )}
-                                  </div>
-                                )}
+                                          <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[10px]" onClick={() => setDeletingId(null)}>
+                                            No
+                                          </Button>
+                                        </div>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           );

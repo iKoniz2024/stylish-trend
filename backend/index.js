@@ -55,16 +55,16 @@ app.use(
 app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
 
-// Cache headers middleware for public GET APIs to optimize CDN edge caching
+// Cache headers middleware for APIs - force no-store for authenticated / dynamic admin requests to prevent browser stale cache
 app.use((req, res, next) => {
     if (req.method === "GET") {
-        const isPublicApi = req.path.startsWith("/api/products") ||
-            req.path.startsWith("/api/categories") ||
-            req.path.startsWith("/api/banners") ||
-            req.path.startsWith("/api/settings") ||
-            req.path.startsWith("/api/collections");
-        if (isPublicApi) {
-            res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
+        const hasAuth = Boolean(req.headers.authorization || req.cookies?.token);
+        if (hasAuth) {
+            res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, private");
+            res.setHeader("Pragma", "no-cache");
+            res.setHeader("Expires", "0");
+        } else {
+            res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
         }
     }
     next();

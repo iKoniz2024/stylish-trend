@@ -41,7 +41,7 @@ export default function StickyCartDrawer() {
   }, [open, refetch]);
 
   useEffect(() => {
-    const handleCartUpdated = () => setOpen(true);
+    const handleCartUpdated = () => refetch();
     const handleOpenDrawer = () => setOpen(true);
     window.addEventListener("cart-updated", handleCartUpdated);
     window.addEventListener("open-cart-drawer", handleOpenDrawer);
@@ -49,7 +49,7 @@ export default function StickyCartDrawer() {
       window.removeEventListener("cart-updated", handleCartUpdated);
       window.removeEventListener("open-cart-drawer", handleOpenDrawer);
     };
-  }, []);
+  }, [refetch]);
 
   const items = cart?.items ?? [];
   const totalItems = items.reduce((sum, item) => sum + (item.quantity ?? 1), 0);

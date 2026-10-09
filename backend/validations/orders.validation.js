@@ -13,7 +13,7 @@ const createOrderSchema = z.object({
     shippingAddress: z.object({
         fullName: z.string().min(2, "Full name is required"),
         phone: z.string().min(11, "Phone number is required"),
-        email: z.string().min(1, "Email address is required").email("Invalid email address"),
+        email: z.string().optional().default("").refine((val) => !val || z.string().email().safeParse(val).success, { message: "Invalid email address" }),
         address: z.string().min(5, "Address is required"),
         city: z.string().min(2, "City is required")
     })
@@ -40,7 +40,7 @@ const createGuestOrderSchema = z.object({
     shippingAddress: z.object({
         fullName: z.string().min(2, "Full name is required"),
         phone: z.string().min(11, "Phone number is required"),
-        email: z.string().min(1, "Email address is required").email("Invalid email address"),
+        email: z.string().optional().default("").refine((val) => !val || z.string().email().safeParse(val).success, { message: "Invalid email address" }),
         address: z.string().min(5, "Address is required"),
         city: z.string().min(2, "City is required")
     })

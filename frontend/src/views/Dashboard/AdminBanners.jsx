@@ -41,7 +41,6 @@ export default function AdminBanners({ children }) {
   const { data, isLoading } = useQuery({
     queryKey: ["admin-banners"],
     queryFn: getBanners,
-    staleTime: 5 * 60 * 1000,
   });
 
   const banners = data ?? [];
@@ -65,18 +64,25 @@ export default function AdminBanners({ children }) {
     resolver: zodResolver(bannerSchema),
   });
 
+  const syncBannerCaches = (updaterFn) => {
+    queryClient.setQueryData(["admin-banners"], updaterFn);
+    queryClient.setQueryData(["banners"], updaterFn);
+  };
+
   const createMutation = useMutation({
     mutationFn: createBanner,
     onSuccess: (res, variables) => {
       toast.success("Banner created");
-      queryClient.setQueryData(["admin-banners"], (old) => {
-        const newBanner = {
-          _id: res?.insertedId || res?._id || Date.now().toString(),
-          ...variables,
-        };
-        return [...(old || []), newBanner];
+      const newBanner = res?.banner || {
+        _id: res?.insertedId || res?._id || Date.now().toString(),
+        ...variables,
+      };
+      syncBannerCaches((old) => {
+        const currentList = Array.isArray(old) ? old : [];
+        return [newBanner, ...currentList];
       });
-      queryClient.invalidateQueries();
+      queryClient.invalidateQueries({ queryKey: ["admin-banners"] });
+      queryClient.invalidateQueries({ queryKey: ["banners"] });
       setShowForm(false);
       resetCreate();
       setCreateImage("");
@@ -91,12 +97,14 @@ export default function AdminBanners({ children }) {
     mutationFn: ({ id, payload }) => updateBanner(id, payload),
     onSuccess: (res, variables) => {
       toast.success("Banner updated");
-      queryClient.setQueryData(["admin-banners"], (old) => {
-        return (old || []).map((b) =>
-          b._id === variables.id ? { ...b, ...variables.payload } : b
+      syncBannerCaches((old) => {
+        const currentList = Array.isArray(old) ? old : [];
+        return currentList.map((b) =>
+          String(b._id) === String(variables.id) ? { ...b, ...variables.payload } : b
         );
       });
-      queryClient.invalidateQueries();
+      queryClient.invalidateQueries({ queryKey: ["admin-banners"] });
+      queryClient.invalidateQueries({ queryKey: ["banners"] });
       setEditingId(null);
       resetUpdate();
       setEditImage("");
@@ -111,15 +119,22 @@ export default function AdminBanners({ children }) {
     mutationFn: deleteBanner,
     onMutate: async (deletedId) => {
       await queryClient.cancelQueries({ queryKey: ["admin-banners"] });
-      const previousBanners = queryClient.getQueryData(["admin-banners"]);
-      queryClient.setQueryData(["admin-banners"], (old) =>
-        (old || []).filter((b) => b._id !== deletedId)
-      );
-      return { previousBanners };
+      await queryClient.cancelQueries({ queryKey: ["banners"] });
+      const previousAdmin = queryClient.getQueryData(["admin-banners"]);
+      const previousBanners = queryClient.getQueryData(["banners"]);
+
+      const removeBanner = (old) =>
+        (Array.isArray(old) ? old : []).filter((b) => String(b._id) !== String(deletedId));
+
+      syncBannerCaches(removeBanner);
+      return { previousAdmin, previousBanners };
     },
     onError: (err, deletedId, context) => {
+      if (context?.previousAdmin) {
+        queryClient.setQueryData(["admin-banners"], context.previousAdmin);
+      }
       if (context?.previousBanners) {
-        queryClient.setQueryData(["admin-banners"], context.previousBanners);
+        queryClient.setQueryData(["banners"], context.previousBanners);
       }
       toast.error(err?.response?.data?.message || "Failed to delete banner");
     },
@@ -128,7 +143,8 @@ export default function AdminBanners({ children }) {
       setDeletingId(null);
     },
     onSettled: () => {
-      queryClient.invalidateQueries();
+      queryClient.invalidateQueries({ queryKey: ["admin-banners"] });
+      queryClient.invalidateQueries({ queryKey: ["banners"] });
     },
   });
 

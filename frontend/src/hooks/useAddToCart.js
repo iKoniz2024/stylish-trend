@@ -10,7 +10,7 @@ export function useAddToCart() {
   const { refetchCartCount } = useCart();
   const queryClient = useQueryClient();
 
-  const addToCart = async (product, quantity = 1, size = "", color = "", colorImage = "") => {
+  const addToCart = async (product, quantity = 1, size = "", color = "", colorImage = "", showToast = true) => {
     try {
       const price = product.discountPercentage > 0
         ? (product.price * (1 - product.discountPercentage / 100)).toFixed(2)
@@ -40,7 +40,9 @@ export function useAddToCart() {
         currency: "BDT",
       });
 
-      toast.success("Added to cart");
+      if (showToast) {
+        toast.success("Added to cart");
+      }
       refetchCartCount(getLocalCartCount());
       queryClient.invalidateQueries({ queryKey: ["localCart"] });
       window.dispatchEvent(new Event("cart-updated"));

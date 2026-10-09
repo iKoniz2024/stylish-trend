@@ -30,7 +30,7 @@ const createAttribute = async (req, res) => {
         };
 
         const result = await attributesCollection.insertOne(attribute);
-        clearCache();
+        clearCache("attributes");
 
         res.status(201).send({
             message: "Attribute created successfully",
@@ -107,7 +107,7 @@ const updateAttribute = async (req, res) => {
 
         await attributesCollection.updateOne(buildIdQuery(id), { $set: updateData });
 
-        clearCache();
+        clearCache("attributes");
         res.send({ message: "Attribute updated successfully" });
 
     } catch (error) {
@@ -127,7 +127,7 @@ const deleteAttribute = async (req, res) => {
             return res.status(404).send({ message: "Attribute not found" });
         }
 
-        clearCache();
+        clearCache("attributes");
         res.send({ message: "Attribute deleted successfully" });
     } catch (error) {
         console.error("deleteAttribute error:", error);

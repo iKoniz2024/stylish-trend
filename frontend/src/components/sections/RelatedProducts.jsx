@@ -37,8 +37,8 @@ const badgeConfig = {
     className: "bg-foreground text-background",
   },
   "top-rated": {
-    label: "Top Rated",
-    icon: Star,
+    label: "Top Pick",
+    icon: Sparkles,
     className: "bg-foreground text-background",
   },
   popular: {

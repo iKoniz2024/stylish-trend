@@ -17,12 +17,35 @@ export default function AdminVendors() {
 
   const mutation = useMutation({
     mutationFn: ({ vendorId, status }) => updateVendorStatus(vendorId, status),
-    onSuccess: (data) => {
-      toast.success(data.message || "Vendor status updated!");
-      queryClient.invalidateQueries(["adminVendors"]);
+    onMutate: async ({ vendorId, status }) => {
+      await queryClient.cancelQueries({ queryKey: ["adminVendors"] });
+      const previousVendors = queryClient.getQueryData(["adminVendors"]);
+
+      queryClient.setQueryData(["adminVendors"], (old) => {
+        if (!old || !Array.isArray(old.vendors)) return old;
+        return {
+          ...old,
+          vendors: old.vendors.map((v) =>
+            String(v._id) === String(vendorId)
+              ? { ...v, vendorInfo: { ...(v.vendorInfo || {}), status } }
+              : v
+          ),
+        };
+      });
+
+      return { previousVendors };
     },
-    onError: (err) => {
+    onError: (err, variables, context) => {
+      if (context?.previousVendors) {
+        queryClient.setQueryData(["adminVendors"], context.previousVendors);
+      }
       toast.error(err?.response?.data?.message || "Failed to update vendor status");
+    },
+    onSuccess: (data) => {
+      toast.success(data?.message || "Vendor status updated!");
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["adminVendors"] });
     },
   });
 

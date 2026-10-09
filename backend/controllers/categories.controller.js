@@ -31,12 +31,30 @@ const buildTree = (categories, parentId = null) => {
         .map(cat => {
             const childItems = buildTree(categories, cat._id);
             const embeddedChildren = Array.isArray(cat.children) ? cat.children : [];
-            const combinedChildren = [...childItems];
+            const combinedChildren = [];
+            const processedSlugs = new Set();
+
+            childItems.forEach(child => {
+                const matchingEmbedded = embeddedChildren.find(e => e.slug === child.slug || String(e._id || e.id) === String(child._id));
+                const attributes = matchingEmbedded && Array.isArray(matchingEmbedded.attributes)
+                    ? matchingEmbedded.attributes
+                    : (Array.isArray(child.attributes) ? child.attributes : []);
+
+                combinedChildren.push({
+                    ...child,
+                    attributes
+                });
+                if (child.slug) processedSlugs.add(child.slug);
+                if (child._id) processedSlugs.add(String(child._id));
+            });
+
             embeddedChildren.forEach(emb => {
-                if (!combinedChildren.some(c => c.slug === emb.slug || String(c._id) === String(emb._id))) {
+                const embIdStr = String(emb._id || emb.id || emb.slug);
+                if (!processedSlugs.has(emb.slug) && !processedSlugs.has(embIdStr)) {
                     combinedChildren.push(emb);
                 }
             });
+
             return {
                 ...cat,
                 children: combinedChildren
@@ -90,7 +108,25 @@ const createCategory = async (req, res) => {
         };
 
         const result = await categoriesCollection.insertOne(category);
-        clearCache();
+
+        if (parentId) {
+            const parentCat = await categoriesCollection.findOne(buildIdQuery(parentId));
+            if (parentCat) {
+                const childItem = {
+                    _id: result.insertedId,
+                    name: category.name,
+                    slug: category.slug,
+                    attributes: category.attributes,
+                    image: category.image
+                };
+                await categoriesCollection.updateOne(
+                    { _id: parentCat._id },
+                    { $push: { children: childItem } }
+                );
+            }
+        }
+
+        clearCache("categories");
 
         res.status(201).send({
             message: "Category created successfully",
@@ -211,7 +247,29 @@ const getSingleCategory = async (req, res) => {
         const db = getDB();
         const categoriesCollection = db.collection("categories");
 
-        const category = await categoriesCollection.findOne(buildIdQuery(id));
+        let category = await categoriesCollection.findOne(buildIdQuery(id));
+        if (!category) {
+            category = await categoriesCollection.findOne({ slug: id });
+        }
+
+        if (!category) {
+            const parentDoc = await categoriesCollection.findOne({
+                $or: [
+                    { "children._id": ObjectId.isValid(id) ? new ObjectId(id) : id },
+                    { "children._id": String(id) },
+                    { "children.id": String(id) },
+                    { "children.slug": String(id) }
+                ]
+            });
+            if (parentDoc) {
+                const child = (parentDoc.children || []).find(
+                    (c) => c.slug === id || String(c._id) === String(id) || String(c.id) === String(id)
+                );
+                if (child) {
+                    category = { ...child, parentId: parentDoc._id };
+                }
+            }
+        }
 
         if (!category) {
             return res.status(404).send({ message: "Category not found" });
@@ -231,54 +289,167 @@ const updateCategory = async (req, res) => {
         const db = getDB();
         const categoriesCollection = db.collection("categories");
 
-        const categoryIdQuery = buildIdQuery(id);
-        const existingCategory = await categoriesCollection.findOne(categoryIdQuery);
-        if (!existingCategory) {
+        const reqSlug = req.body.slug ? req.body.slug.trim().toLowerCase().replace(/\s+/g, "-") : null;
+        const reqName = req.body.name ? req.body.name.trim() : null;
+
+        // 1. Find standalone document by _id or slug
+        let categoryIdQuery = buildIdQuery(id);
+        let existingCategory = await categoriesCollection.findOne(categoryIdQuery);
+
+        if (!existingCategory && reqSlug) {
+            existingCategory = await categoriesCollection.findOne({ slug: reqSlug });
+        }
+
+        let updatedAny = false;
+
+        // If standalone category document exists, update it
+        if (existingCategory) {
+            // Unique slug check if slug changed
+            if (reqSlug && reqSlug !== existingCategory.slug) {
+                const existingSlug = await categoriesCollection.findOne({ slug: reqSlug, _id: { $ne: existingCategory._id } });
+                if (existingSlug) {
+                    return res.status(400).send({ message: `Category with slug '${reqSlug}' already exists` });
+                }
+            }
+
+            let newParentId = req.body.parentId !== undefined ? (req.body.parentId ? String(req.body.parentId) : null) : existingCategory.parentId;
+
+            // Circular dependency check
+            if (newParentId && String(newParentId) !== String(existingCategory.parentId || "")) {
+                const isCircular = await checkCircularDependency(categoriesCollection, existingCategory._id, newParentId);
+                if (isCircular) {
+                    return res.status(400).send({ message: "Cannot set a category as a child of itself or its subcategory" });
+                }
+            }
+
+            const updateData = {
+                ...req.body,
+                updatedAt: new Date()
+            };
+
+            delete updateData._id;
+            delete updateData.id;
+
+            if (reqSlug) updateData.slug = reqSlug;
+            if (reqName) updateData.name = reqName;
+            if (req.body.parentId !== undefined) {
+                updateData.parentId = newParentId;
+            }
+
+            await categoriesCollection.updateOne(
+                { _id: existingCategory._id },
+                { $set: updateData }
+            );
+
+            // Handle parent change: pull from old parent(s), push to new parent if assigned
+            const oldParentId = existingCategory.parentId;
+            if (req.body.parentId !== undefined && String(oldParentId) !== String(newParentId)) {
+                // Remove from all old parents
+                await categoriesCollection.updateMany(
+                    {
+                        $or: [
+                            { "children._id": existingCategory._id },
+                            { "children._id": String(existingCategory._id) },
+                            { "children.slug": existingCategory.slug }
+                        ]
+                    },
+                    {
+                        $pull: {
+                            children: {
+                                $or: [
+                                    { _id: existingCategory._id },
+                                    { _id: String(existingCategory._id) },
+                                    { slug: existingCategory.slug }
+                                ]
+                            }
+                        }
+                    }
+                );
+
+                // Add to new parent if assigned
+                if (newParentId) {
+                    const newParentDoc = await categoriesCollection.findOne(buildIdQuery(newParentId));
+                    if (newParentDoc) {
+                        const childItem = {
+                            _id: existingCategory._id,
+                            name: reqName || existingCategory.name,
+                            slug: reqSlug || existingCategory.slug,
+                            attributes: Array.isArray(req.body.attributes) ? req.body.attributes : (existingCategory.attributes || []),
+                            image: req.body.image !== undefined ? req.body.image : (existingCategory.image || "")
+                        };
+                        await categoriesCollection.updateOne(
+                            { _id: newParentDoc._id },
+                            { $push: { children: childItem } }
+                        );
+                    }
+                }
+            }
+
+            updatedAny = true;
+        }
+
+        // 2. Always find any parent documents containing this subcategory in their `children` array and update them
+        const searchSlug = reqSlug || existingCategory?.slug || String(id).trim();
+        const searchName = reqName ? reqName.toLowerCase() : existingCategory?.name?.toLowerCase();
+        const searchIdStr = existingCategory ? String(existingCategory._id) : String(id);
+
+        const parentDocs = await categoriesCollection.find({
+            $or: [
+                { "children._id": ObjectId.isValid(searchIdStr) ? new ObjectId(searchIdStr) : searchIdStr },
+                { "children._id": searchIdStr },
+                { "children.id": searchIdStr },
+                { "children.slug": searchSlug },
+                { "children.slug": String(id).trim() },
+                ...(existingCategory?.parentId ? [buildIdQuery(existingCategory.parentId)] : [])
+            ]
+        }).toArray();
+
+        for (const parentDoc of parentDocs) {
+            if (Array.isArray(parentDoc.children) && parentDoc.children.length > 0) {
+                let childMatched = false;
+                const updatedChildren = parentDoc.children.map((child) => {
+                    const childIdStr = child._id ? String(child._id) : String(child.id || "");
+                    const childSlug = child.slug ? String(child.slug).toLowerCase() : "";
+                    const childName = child.name ? String(child.name).toLowerCase() : "";
+
+                    const isMatch = (childIdStr && childIdStr === searchIdStr) || 
+                                    (childSlug && (childSlug === searchSlug || childSlug === String(id).trim())) || 
+                                    (searchName && childName === searchName);
+
+                    if (isMatch) {
+                        childMatched = true;
+                        return {
+                            ...child,
+                            name: reqName || child.name,
+                            slug: reqSlug || child.slug,
+                            attributes: Array.isArray(req.body.attributes) ? req.body.attributes : (child.attributes || []),
+                            image: req.body.image !== undefined ? req.body.image : child.image,
+                            updatedAt: new Date()
+                        };
+                    }
+                    return child;
+                });
+
+                if (childMatched) {
+                    await categoriesCollection.updateOne(
+                        { _id: parentDoc._id },
+                        { $set: { children: updatedChildren, updatedAt: new Date() } }
+                    );
+                    updatedAny = true;
+                }
+            }
+        }
+
+        if (!updatedAny && !existingCategory) {
             return res.status(404).send({ message: "Category not found" });
         }
 
-        // Unique slug check if slug changed
-        if (req.body.slug && req.body.slug !== existingCategory.slug) {
-            const slug = req.body.slug.trim();
-            const existingSlug = await categoriesCollection.findOne({ slug, _id: { $ne: existingCategory._id } });
-            if (existingSlug) {
-                return res.status(400).send({ message: `Category with slug '${slug}' already exists` });
-            }
-        }
-
-        // Circular parent dependency check
-        if (req.body.parentId !== undefined && req.body.parentId !== existingCategory.parentId) {
-            const newParentId = req.body.parentId ? String(req.body.parentId) : null;
-            if (newParentId) {
-                if (String(newParentId) === String(existingCategory._id)) {
-                    return res.status(400).send({ message: "A category cannot be its own parent" });
-                }
-                const isCircular = await checkCircularDependency(categoriesCollection, existingCategory._id, newParentId);
-                if (isCircular) {
-                    return res.status(400).send({ message: "Circular parent-child relationship is not allowed" });
-                }
-            }
-        }
-
-        const updateData = {
-            ...req.body,
-            updatedAt: new Date()
-        };
-
-        if (updateData.parentId !== undefined) {
-            updateData.parentId = updateData.parentId ? String(updateData.parentId) : null;
-        }
-
-        const result = await categoriesCollection.updateOne(
-            categoryIdQuery,
-            { $set: updateData }
-        );
-
-        clearCache();
-        res.send({ message: "Category updated successfully" });
+        clearCache("categories");
+        const freshCategory = existingCategory ? await categoriesCollection.findOne({ _id: existingCategory._id }) : null;
+        return res.send({ message: "Category updated successfully", category: freshCategory });
 
     } catch (error) {
-        console.error(error);
+        console.error("updateCategory error:", error);
         res.status(500).send({ message: "Internal Server Error" });
     }
 };
@@ -289,20 +460,69 @@ const deleteCategory = async (req, res) => {
         const db = getDB();
         const categoriesCollection = db.collection("categories");
 
-        const category = await categoriesCollection.findOne(buildIdQuery(id));
+        let category = await categoriesCollection.findOne(buildIdQuery(id));
         if (!category) {
-            return res.status(404).send({ message: "Category not found" });
+            category = await categoriesCollection.findOne({ slug: id });
         }
 
-        // Update any children of this category to have parentId = category.parentId (re-parenting)
-        await categoriesCollection.updateMany(
-            { parentId: String(category._id) },
-            { $set: { parentId: category.parentId || null, updatedAt: new Date() } }
-        );
+        if (category) {
+            await categoriesCollection.updateMany(
+                { parentId: String(category._id) },
+                { $set: { parentId: category.parentId || null, updatedAt: new Date() } }
+            );
 
-        await categoriesCollection.deleteOne(buildIdQuery(id));
+            await categoriesCollection.deleteOne({ _id: category._id });
 
-        clearCache();
+            // Also pull from any parent children array by _id, string _id, id, or slug
+            await categoriesCollection.updateMany(
+                {
+                    $or: [
+                        { "children.slug": category.slug },
+                        { "children._id": category._id },
+                        { "children._id": String(category._id) },
+                        { "children.id": String(category._id) }
+                    ]
+                },
+                {
+                    $pull: {
+                        children: {
+                            $or: [
+                                { slug: category.slug },
+                                { _id: category._id },
+                                { _id: String(category._id) },
+                                { id: String(category._id) }
+                            ]
+                        }
+                    }
+                }
+            );
+        } else {
+            // Remove from parent children array if embedded
+            await categoriesCollection.updateMany(
+                {
+                    $or: [
+                        { "children._id": ObjectId.isValid(id) ? new ObjectId(id) : id },
+                        { "children._id": String(id) },
+                        { "children.id": String(id) },
+                        { "children.slug": String(id) }
+                    ]
+                },
+                {
+                    $pull: {
+                        children: {
+                            $or: [
+                                { _id: ObjectId.isValid(id) ? new ObjectId(id) : id },
+                                { _id: String(id) },
+                                { id: String(id) },
+                                { slug: String(id) }
+                            ]
+                        }
+                    }
+                }
+            );
+        }
+
+        clearCache("categories");
         res.send({ message: "Category deleted successfully" });
 
     } catch (error) {

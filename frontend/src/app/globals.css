@@ -103,6 +103,7 @@
 
   a {
     transition: color 0.2s ease-in-out, opacity 0.15s ease-in-out;
+    cursor: pointer;
   }
 
   a:hover {
@@ -116,13 +117,18 @@
   [role="button"] {
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
+    cursor: pointer;
   }
 
+  /* Instant tactile feedback on click / tap across all interactive elements */
   button:active:not(:disabled),
   a:active,
-  [role="button"]:active {
-    transform: scale(0.97);
-    transition: transform 0.05s ease-out;
+  [role="button"]:active,
+  input[type="submit"]:active:not(:disabled),
+  input[type="button"]:active:not(:disabled) {
+    transform: scale(0.95) !important;
+    opacity: 0.88 !important;
+    transition: transform 0.05s cubic-bezier(0, 0, 0.2, 1), opacity 0.05s linear !important;
   }
 
   button:disabled {

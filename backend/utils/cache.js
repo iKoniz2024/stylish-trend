@@ -89,26 +89,19 @@ const warmUpCache = async (db) => {
  * @param {string} [keyOrPrefix] 
  */
 const clearCache = (keyOrPrefix) => {
-    if (!keyOrPrefix) {
-        // Clear only expired keys instead of nuking the whole cache
-        const now = Date.now();
-        for (const [key, item] of cache.entries()) {
-            if (item.expiry <= now) {
-                cache.delete(key);
-            }
-        }
+    if (!keyOrPrefix || keyOrPrefix === "all") {
+        cache.clear();
         return;
     }
 
-    if (cache.has(keyOrPrefix)) {
-        cache.delete(keyOrPrefix);
-        return;
-    }
-
-    // Delete keys matching the prefix pattern (e.g., 'products', 'categories')
     const lowerPattern = keyOrPrefix.toLowerCase();
     for (const key of cache.keys()) {
-        if (key.toLowerCase().includes(lowerPattern)) {
+        const lowerKey = key.toLowerCase();
+        if (lowerKey.includes(lowerPattern)) {
+            cache.delete(key);
+        } else if ((lowerPattern === "products" || lowerPattern === "categories") && lowerKey.includes("categorieswithcounts")) {
+            cache.delete(key);
+        } else if ((lowerPattern === "products" || lowerPattern === "orders") && lowerKey.includes("bestselling")) {
             cache.delete(key);
         }
     }

@@ -51,6 +51,7 @@ export async function generateMetadata() {
 
 import Providers from "@/components/Providers";
 import MainLayout from "@/layouts/MainLayout";
+import NextTopLoader from "nextjs-toploader";
 
 export default function RootLayout({ children }) {
   return (
@@ -60,6 +61,18 @@ export default function RootLayout({ children }) {
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
+        <NextTopLoader
+          color="#f59e0b"
+          initialPosition={0.08}
+          crawlSpeed={200}
+          height={3.5}
+          crawl={true}
+          showSpinner={false}
+          easing="ease"
+          speed={200}
+          shadow="0 0 12px rgba(245,158,11,0.9)"
+          zIndex={99999}
+        />
         <Providers>
           {children}
         </Providers>

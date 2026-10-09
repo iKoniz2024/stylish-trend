@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from "react";
 
 import { motion } from "framer-motion";
-import { Trophy, Flame, Star, ShoppingCart, Zap, Eye } from "lucide-react";
+import { Trophy, Flame, Star, Sparkles, ShoppingCart, Zap, Eye } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { formatBDT } from "@/utils/currency";
 import OrderModal from "@/components/ui/OrderModal";
@@ -49,8 +49,8 @@ const badgeConfig = {
     ring: "ring-2 ring-foreground/30",
   },
   "top-rated": {
-    label: "Top Rated",
-    icon: Star,
+    label: "Top Pick",
+    icon: Sparkles,
     className: "bg-foreground text-background",
     ring: "ring-2 ring-foreground/30",
   },
@@ -86,24 +86,29 @@ export default function ProductCard({ product, index, badge }) {
     (Array.isArray(product.variants) && product.variants.length > 0) ||
     (product.attributes && typeof product.attributes === "object" && Object.entries(product.attributes).some(([k, v]) => Array.isArray(v) && v.length > 0));
 
-  const handleDirectAddToCart = (e) => {
+  const [showOrderModal, setShowOrderModal] = useState(false);
+  const [orderModalMode, setOrderModalMode] = useState("cart");
+
+  const handleOpenAddToCartModal = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    if (hasOptions) {
-      router.push(`/product/${product._id}`);
-      return;
-    }
-    addToCart(product, 1);
+    setOrderModalMode("cart");
+    setShowOrderModal(true);
   };
 
-  const handleDirectOrderNow = (e) => {
+  const handleDirectOrderNow = async (e) => {
     e.preventDefault();
     e.stopPropagation();
-    if (hasOptions) {
-      router.push(`/product/${product._id}`);
-      return;
-    }
-    addToCart(product, 1);
+    if (isOutOfStock || isAdminOrVendor) return;
+
+    let defaultSize = "";
+    if (Array.isArray(product.sizes) && product.sizes.length > 0) defaultSize = product.sizes[0];
+    else if (typeof product.sizes === "string" && product.sizes.trim()) defaultSize = product.sizes.split(",")[0].trim();
+
+    const defaultColor = product.colors?.[0]?.name || "";
+    const defaultColorImage = product.colors?.[0]?.image || "";
+
+    await addToCart(product, 1, defaultSize, defaultColor, defaultColorImage, false);
     router.push("/checkout");
   };
 
@@ -196,18 +201,18 @@ export default function ProductCard({ product, index, badge }) {
             <div className="flex items-center gap-1.5 pt-0.5 w-full mt-auto">
               <button
                 disabled={isOutOfStock || isAdminOrVendor}
-                onClick={handleDirectAddToCart}
+                onClick={handleOpenAddToCartModal}
                 title={isAdminOrVendor ? "Admins cannot purchase" : "Add to Cart"}
-                className={`hidden sm:flex min-w-0 flex-1 items-center justify-center gap-1 rounded-full border border-border bg-secondary hover:bg-secondary/80 text-secondary-foreground py-1.5 px-2 text-[10px] font-extrabold transition-all active:scale-95 ${isOutOfStock || isAdminOrVendor ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} shadow-2xs`}
+                className={`flex items-center justify-center gap-1.5 rounded-full border border-border bg-secondary hover:bg-secondary/80 text-secondary-foreground p-2 lg:py-1.5 lg:px-3 text-[10px] font-extrabold transition-all active:scale-95 shrink-0 ${isOutOfStock || isAdminOrVendor ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} shadow-2xs`}
               >
-                <ShoppingCart className="size-3 shrink-0 text-secondary-foreground" />
-                <span className="truncate whitespace-nowrap">Add to Cart</span>
+                <ShoppingCart className="size-3.5 sm:size-3 shrink-0 text-secondary-foreground" />
+                <span className="hidden lg:inline truncate whitespace-nowrap">Add to Cart</span>
               </button>
               <button
                 disabled={isOutOfStock || isAdminOrVendor}
                 onClick={handleDirectOrderNow}
                 title={isAdminOrVendor ? "Admins cannot purchase" : "Order Now"}
-                className={`w-full sm:flex-1 flex items-center justify-center gap-1.5 rounded-full btn-action-gold py-1.5 px-3 text-[11px] sm:text-[10px] font-extrabold transition-all duration-200 active:scale-[0.98] ${isOutOfStock || isAdminOrVendor ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} shadow-xs`}
+                className={`flex-1 flex items-center justify-center gap-1.5 rounded-full btn-action-gold py-1.5 px-3 text-[11px] sm:text-[10px] font-extrabold transition-all duration-200 active:scale-[0.98] ${isOutOfStock || isAdminOrVendor ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} shadow-xs`}
               >
                 <Zap className="size-3.5 sm:size-3 fill-current shrink-0" />
                 <span className="whitespace-nowrap">{isOutOfStock ? "Unavailable" : "Order Now"}</span>
@@ -216,6 +221,13 @@ export default function ProductCard({ product, index, badge }) {
           </div>
         </div>
       </div>
+
+      <OrderModal
+        open={showOrderModal}
+        onClose={() => setShowOrderModal(false)}
+        product={product}
+        mode={orderModalMode}
+      />
 
       <ProductImageModal
         open={showImageModal}

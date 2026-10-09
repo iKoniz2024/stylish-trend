@@ -192,27 +192,8 @@ const getBestSellingProductsInternal = async (db) => {
         console.error("Best-selling aggregation failed, using fallback:", e.message);
     }
 
-    if (!products || products.length === 0) {
-        products = await productsCollection
-            .find({})
-            .project({
-                description: 0,
-                dimensions: 0,
-                reviews: 0,
-                images: 0,
-                warrantyInformation: 0,
-                shippingInformation: 0,
-                returnPolicy: 0,
-                meta: 0,
-                tags: 0,
-                sku: 0,
-                weight: 0,
-                availabilityStatus: 0,
-                minimumOrderQuantity: 0
-            })
-            .sort({ rating: -1, _id: -1 })
-            .limit(12)
-            .toArray();
+    if (!Array.isArray(products)) {
+        products = [];
     }
 
     return products.map(product => ({

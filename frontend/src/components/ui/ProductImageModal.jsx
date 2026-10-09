@@ -47,7 +47,7 @@ export default function ProductImageModal({ open, onClose, image, title, images 
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
-          className="fixed inset-0 z-100 flex flex-col items-center justify-between bg-black/90 p-4 sm:p-6 backdrop-blur-md select-none"
+          className="fixed inset-0 z-[9995] flex flex-col items-center justify-between bg-black/90 p-4 sm:p-6 backdrop-blur-md select-none"
           onClick={onClose}
         >
           {/* Top Bar */}

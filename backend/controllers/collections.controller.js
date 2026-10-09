@@ -31,7 +31,7 @@ const createCollection = async (req, res) => {
         };
 
         const result = await collectionsCollection.insertOne(newCollection);
-        clearCache();
+        clearCache("collections");
 
         res.status(201).send({
             message: "Collection created successfully",
@@ -134,7 +134,7 @@ const updateCollection = async (req, res) => {
 
         await collectionsCollection.updateOne(buildIdQuery(id), { $set: updateData });
 
-        clearCache();
+        clearCache("collections");
         res.send({ message: "Collection updated successfully" });
 
     } catch (error) {
@@ -154,7 +154,7 @@ const deleteCollection = async (req, res) => {
             return res.status(404).send({ message: "Collection not found" });
         }
 
-        clearCache();
+        clearCache("collections");
         res.send({ message: "Collection deleted successfully" });
     } catch (error) {
         console.error("deleteCollection error:", error);

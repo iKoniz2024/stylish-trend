@@ -36,11 +36,19 @@ export default function AdminAttributes() {
     queryFn: getAttributes,
   });
 
+  const syncAttributeCaches = (updaterFn) => {
+    queryClient.setQueryData(["admin-attributes"], updaterFn);
+    queryClient.setQueryData(["attributes"], updaterFn);
+  };
+
   const createMutation = useMutation({
     mutationFn: createAttribute,
-    onSuccess: () => {
+    onSuccess: (res, variables) => {
       toast.success("Attribute created successfully");
+      const newAttr = res?.attribute || { _id: res?.insertedId || Date.now().toString(), ...variables };
+      syncAttributeCaches((old) => [newAttr, ...(Array.isArray(old) ? old : [])]);
       queryClient.invalidateQueries({ queryKey: ["admin-attributes"] });
+      queryClient.invalidateQueries({ queryKey: ["attributes"] });
       closeModal();
     },
     onError: (err) => {
@@ -50,9 +58,15 @@ export default function AdminAttributes() {
 
   const updateMutation = useMutation({
     mutationFn: ({ id, payload }) => updateAttribute(id, payload),
-    onSuccess: () => {
+    onSuccess: (res, variables) => {
       toast.success("Attribute updated successfully");
+      syncAttributeCaches((old) =>
+        (Array.isArray(old) ? old : []).map((a) =>
+          String(a._id) === String(variables.id) ? { ...a, ...variables.payload } : a
+        )
+      );
       queryClient.invalidateQueries({ queryKey: ["admin-attributes"] });
+      queryClient.invalidateQueries({ queryKey: ["attributes"] });
       closeModal();
     },
     onError: (err) => {
@@ -62,12 +76,28 @@ export default function AdminAttributes() {
 
   const deleteMutation = useMutation({
     mutationFn: deleteAttribute,
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ["admin-attributes"] });
+      await queryClient.cancelQueries({ queryKey: ["attributes"] });
+      const previousAdmin = queryClient.getQueryData(["admin-attributes"]);
+      const previousPublic = queryClient.getQueryData(["attributes"]);
+
+      syncAttributeCaches((old) =>
+        (Array.isArray(old) ? old : []).filter((a) => String(a._id) !== String(id))
+      );
+      return { previousAdmin, previousPublic };
+    },
+    onError: (err, id, context) => {
+      if (context?.previousAdmin) queryClient.setQueryData(["admin-attributes"], context.previousAdmin);
+      if (context?.previousPublic) queryClient.setQueryData(["attributes"], context.previousPublic);
+      toast.error(err?.response?.data?.message || "Failed to delete attribute");
+    },
     onSuccess: () => {
       toast.success("Attribute deleted");
-      queryClient.invalidateQueries({ queryKey: ["admin-attributes"] });
     },
-    onError: (err) => {
-      toast.error(err?.response?.data?.message || "Failed to delete attribute");
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-attributes"] });
+      queryClient.invalidateQueries({ queryKey: ["attributes"] });
     }
   });
 

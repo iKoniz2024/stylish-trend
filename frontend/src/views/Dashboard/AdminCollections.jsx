@@ -33,11 +33,19 @@ export default function AdminCollections() {
     queryFn: () => getCollections(),
   });
 
+  const syncCollectionCaches = (updaterFn) => {
+    queryClient.setQueryData(["admin-collections"], updaterFn);
+    queryClient.setQueryData(["collections"], updaterFn);
+  };
+
   const createMutation = useMutation({
     mutationFn: createCollection,
-    onSuccess: () => {
+    onSuccess: (res, variables) => {
       toast.success("Collection created successfully");
+      const newCol = res?.collection || { _id: res?.insertedId || Date.now().toString(), ...variables };
+      syncCollectionCaches((old) => [newCol, ...(Array.isArray(old) ? old : [])]);
       queryClient.invalidateQueries({ queryKey: ["admin-collections"] });
+      queryClient.invalidateQueries({ queryKey: ["collections"] });
       closeModal();
     },
     onError: (err) => {
@@ -47,9 +55,15 @@ export default function AdminCollections() {
 
   const updateMutation = useMutation({
     mutationFn: ({ id, payload }) => updateCollection(id, payload),
-    onSuccess: () => {
+    onSuccess: (res, variables) => {
       toast.success("Collection updated successfully");
+      syncCollectionCaches((old) =>
+        (Array.isArray(old) ? old : []).map((c) =>
+          String(c._id) === String(variables.id) ? { ...c, ...variables.payload } : c
+        )
+      );
       queryClient.invalidateQueries({ queryKey: ["admin-collections"] });
+      queryClient.invalidateQueries({ queryKey: ["collections"] });
       closeModal();
     },
     onError: (err) => {
@@ -59,12 +73,28 @@ export default function AdminCollections() {
 
   const deleteMutation = useMutation({
     mutationFn: deleteCollection,
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ["admin-collections"] });
+      await queryClient.cancelQueries({ queryKey: ["collections"] });
+      const previousAdmin = queryClient.getQueryData(["admin-collections"]);
+      const previousPublic = queryClient.getQueryData(["collections"]);
+
+      syncCollectionCaches((old) =>
+        (Array.isArray(old) ? old : []).filter((c) => String(c._id) !== String(id))
+      );
+      return { previousAdmin, previousPublic };
+    },
+    onError: (err, id, context) => {
+      if (context?.previousAdmin) queryClient.setQueryData(["admin-collections"], context.previousAdmin);
+      if (context?.previousPublic) queryClient.setQueryData(["collections"], context.previousPublic);
+      toast.error(err?.response?.data?.message || "Failed to delete collection");
+    },
     onSuccess: () => {
       toast.success("Collection deleted");
-      queryClient.invalidateQueries({ queryKey: ["admin-collections"] });
     },
-    onError: (err) => {
-      toast.error(err?.response?.data?.message || "Failed to delete collection");
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-collections"] });
+      queryClient.invalidateQueries({ queryKey: ["collections"] });
     }
   });
 

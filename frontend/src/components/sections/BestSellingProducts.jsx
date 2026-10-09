@@ -67,7 +67,7 @@ export default function BestSellingProducts({ initialData }) {
           <BestSellingSkeleton />
         ) : bestSellingProducts.length === 0 ? (
           <p className="py-12 text-center text-sm text-muted-foreground">
-            No products found.
+            No best selling products yet. Ordered items will appear here automatically!
           </p>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">

@@ -88,17 +88,17 @@ export default function Categories({ initialData }) {
                     href={`/products?category=${cat.slug}`}
                     className="group block text-center"
                   >
-                    <div className="aspect-square overflow-hidden rounded-3xl border-2 border-border group-hover:border-accent bg-secondary/50 p-1.5 transition-all duration-300 group-hover:shadow-md group-hover:-translate-y-1">
-                      <div className="h-full w-full overflow-hidden rounded-2xl bg-card p-1 flex items-center justify-center">
+                    <div className="aspect-square overflow-hidden rounded-full border-2 border-border group-hover:border-primary bg-secondary/50 p-1.5 transition-all duration-300 group-hover:shadow-md group-hover:-translate-y-1">
+                      <div className="h-full w-full overflow-hidden rounded-full bg-card p-1 flex items-center justify-center">
                         {cat.image ? (
                           <img
                             src={cat.image}
                             alt={cat.name}
-                            className="h-full w-full object-cover rounded-xl transition-transform duration-300 group-hover:scale-110"
+                            className="h-full w-full object-cover rounded-full transition-transform duration-300 group-hover:scale-110"
                             loading="lazy"
                           />
                         ) : (
-                          <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+                          <div className="flex h-full w-full items-center justify-center text-muted-foreground rounded-full">
                             <svg className="h-8 w-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                             </svg>
