@@ -262,9 +262,6 @@ export default function AdminProductDetails({ children }) {
       queryClient.invalidateQueries({ queryKey: ["categories-with-counts"] });
     },
   });
-      queryClient.invalidateQueries();
-    },
-  });
 
 
 
