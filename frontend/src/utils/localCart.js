@@ -62,15 +62,27 @@ export function updateLocalCartItem(productId, quantity, size = "", color = "") 
 }
 
 export function removeFromLocalCart(productId, size = "", color = "") {
-  const cart = getLocalCart().filter(
-    (c) =>
-      !(
-        c.productId === productId &&
-        (c.size || "") === (size || "") &&
-        (c.color || "") === (color || "")
-      )
-  );
+  const targetId = String(productId || "");
+  const targetSize = String(size || "").trim();
+  const targetColor = String(color || "").trim();
+
+  const cart = getLocalCart().filter((c) => {
+    const cId = String(c.productId || c._id || c.id || "");
+    const cSize = String(c.size || "").trim();
+    const cColor = String(c.color || "").trim();
+
+    return !(cId === targetId && cSize === targetSize && cColor === targetColor);
+  });
   setLocalCart(cart);
+  return cart;
+}
+
+export function removeLocalCartByIndex(index) {
+  const cart = getLocalCart();
+  if (typeof index === "number" && index >= 0 && index < cart.length) {
+    cart.splice(index, 1);
+    setLocalCart(cart);
+  }
   return cart;
 }
 
@@ -80,4 +92,27 @@ export function getLocalCartCount() {
 
 export function clearLocalCart() {
   localStorage.removeItem(CART_KEY);
+}
+
+const DIRECT_ORDER_KEY = "infinity_direct_checkout_item";
+
+export function setDirectCheckoutItem(item) {
+  try {
+    sessionStorage.setItem(DIRECT_ORDER_KEY, JSON.stringify(item));
+  } catch {}
+}
+
+export function getDirectCheckoutItem() {
+  try {
+    const raw = sessionStorage.getItem(DIRECT_ORDER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearDirectCheckoutItem() {
+  try {
+    sessionStorage.removeItem(DIRECT_ORDER_KEY);
+  } catch {}
 }

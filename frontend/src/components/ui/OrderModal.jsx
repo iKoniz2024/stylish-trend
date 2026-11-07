@@ -8,6 +8,7 @@ import { X, Minus, Plus, ShoppingCart, Zap } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAddToCart } from "@/hooks/useAddToCart";
 import { formatBDT } from "@/utils/currency";
+import { setDirectCheckoutItem } from "@/utils/localCart";
 
 export default function OrderModal({ product, open, onClose, mode = "checkout" }) {
   const router = useRouter();
@@ -137,16 +138,22 @@ export default function OrderModal({ product, open, onClose, mode = "checkout" }
       toast.error("Please select a color");
       return;
     }
-    await addToCart(
-      product,
-      quantity,
-      getFinalVariantLabel() || "",
-      selectedColor?.name || "",
-      selectedColor?.image || "",
-      false
-    );
+    const directItem = {
+      productId: product._id,
+      title: product.title,
+      thumbnail: selectedColor?.image || product.thumbnail || product.images?.[0] || "",
+      price: hasDiscount ? Number(discountedPrice) : Number(product.price),
+      quantity: quantity || 1,
+      size: getFinalVariantLabel() || "",
+      color: selectedColor?.name || "",
+      colorImage: selectedColor?.image || "",
+      stock: product.stock,
+      category: product.category || "",
+      attributes: selectedDynamicAttrs || {},
+    };
+    setDirectCheckoutItem(directItem);
     onClose();
-    router.push("/checkout");
+    router.push("/checkout?direct=1");
   };
 
   const previewImage = activeDisplayImage || product.thumbnail || product.images?.[0] || null;

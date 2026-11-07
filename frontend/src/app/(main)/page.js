@@ -14,7 +14,7 @@ async function fetchHomeData() {
     try {
       const res = await fetch(url, {
         next: { revalidate: 60 },
-        signal: AbortSignal.timeout(4000),
+        signal: AbortSignal.timeout(1200),
       });
       if (res.ok) {
         return await res.json();

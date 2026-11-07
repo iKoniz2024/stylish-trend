@@ -11,7 +11,7 @@ import toast from "react-hot-toast";
 import { Button } from "@/components/ui/Button";
 import useCart from "@/hooks/useCart";
 import { formatBDT } from "@/utils/currency";
-import { getLocalCart, removeFromLocalCart, getLocalCartCount } from "@/utils/localCart";
+import { getLocalCart, removeFromLocalCart, removeLocalCartByIndex, getLocalCartCount } from "@/utils/localCart";
 import { useAuth } from "@/hooks/useAuth";
 
 export default function StickyCartDrawer() {
@@ -59,20 +59,39 @@ export default function StickyCartDrawer() {
   );
 
   const removeMutation = useMutation({
-    mutationFn: ({ productId, size }) => {
-      removeFromLocalCart(productId, size);
+    mutationFn: ({ productId, size, color, index }) => {
+      if (typeof index === "number") {
+        removeLocalCartByIndex(index);
+      } else {
+        removeFromLocalCart(productId, size, color);
+      }
       return Promise.resolve();
     },
-    onMutate: async ({ productId, size }) => {
+    onMutate: async ({ productId, size, color, index }) => {
       await queryClient.cancelQueries({ queryKey: ["localCart"] });
       const previousCart = queryClient.getQueryData(["localCart"]);
       queryClient.setQueryData(["localCart"], (old) => {
         if (!old?.items) return old;
+        const targetId = String(productId || "");
+        const targetSize = String(size || "").trim();
+        const targetColor = String(color || "").trim();
+
+        const filtered = old.items.filter((item, idx) => {
+          if (typeof index === "number" && idx === index) return false;
+          const iId = String(item.productId || item._id || item.id || "");
+          const iSize = String(item.size || "").trim();
+          const iColor = String(item.color || "").trim();
+          return !(iId === targetId && iSize === targetSize && iColor === targetColor);
+        });
+
+        const totalItems = filtered.reduce((sum, item) => sum + item.quantity, 0);
+        const totalPrice = filtered.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
         return {
           ...old,
-          items: old.items.filter(
-            (item) => !(item.productId === productId && (item.size || "") === (size || ""))
-          ),
+          items: filtered,
+          totalItems,
+          totalPrice,
         };
       });
       return { previousCart };
@@ -86,6 +105,7 @@ export default function StickyCartDrawer() {
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["localCart"] });
       refetchCartCount(getLocalCartCount());
+      window.dispatchEvent(new Event("cart-updated"));
     },
   });
 
@@ -166,8 +186,15 @@ export default function StickyCartDrawer() {
                   </div>
                   <button
                     type="button"
-                    className="rounded-lg p-2 text-destructive transition hover:bg-destructive/10 hover:text-destructive"
-                    onClick={() => removeMutation.mutate({ productId: item.productId, size: item.size || "" })}
+                    className="rounded-lg p-2 text-destructive transition hover:bg-destructive/10 hover:text-destructive cursor-pointer"
+                    onClick={() =>
+                      removeMutation.mutate({
+                        productId: item.productId,
+                        size: item.size || "",
+                        color: item.color || "",
+                        index: idx,
+                      })
+                    }
                     aria-label={`Remove ${item.title || "item"} from cart`}
                   >
                     <Trash2 className="size-4" />

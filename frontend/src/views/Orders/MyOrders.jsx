@@ -189,8 +189,10 @@ function OrderCard({ order, copied, onCopy }) {
         </div>
 
         {/* Progress */}
-        <div className="mt-5 pb-6">
-          <ProgressTracker status={order.orderStatus} />
+        <div className="mt-5 pb-6 overflow-x-auto no-scrollbar">
+          <div className="min-w-fit">
+            <ProgressTracker status={order.orderStatus} />
+          </div>
         </div>
       </div>
 

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState, useEffect } from "react";
 import { Swiper, SwiperSlide } from "swiper/react";
 import { Autoplay, Pagination, Navigation } from "swiper/modules";
-import { ChevronLeft, ChevronRight, ChevronRight as ArrowRightIcon, Zap, Store, Sparkles, Layers } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronRight as ArrowRightIcon, Zap, Store, Sparkles, Layers, ArrowUpRight, Flame, ShoppingBag, ShieldCheck, LayoutGrid } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { getBanners } from "@/services/banner.api";
 import { getFlashSaleProducts } from "@/services/product.api";
@@ -32,7 +32,7 @@ const heroStyles = `
   }
 `;
 
-export default function Hero({ initialData }) {
+export default function Hero({ initialData, categoriesData, flashSaleData }) {
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
@@ -49,9 +49,10 @@ export default function Hero({ initialData }) {
   });
 
   // Flash Sale query for Right Promo Card
-  const { data: flashData } = useQuery({
+  const { data: flashData, isLoading: isFlashLoading } = useQuery({
     queryKey: ["flash-sale"],
     queryFn: getFlashSaleProducts,
+    initialData: flashSaleData,
     staleTime: 1000 * 60 * 1, // 1 minute cache
     gcTime: 1000 * 60 * 30,
   });
@@ -64,11 +65,14 @@ export default function Hero({ initialData }) {
     gcTime: 1000 * 60 * 30,
   });
 
-  // Top Categories with Product Counts query
-  const { data: topCategoriesData } = useQuery({
+  // Top Categories with Product Counts query (Live Dynamic Sync)
+  const { data: topCategoriesData, isLoading: isCategoriesLoading } = useQuery({
     queryKey: ["topCategoriesWithCounts"],
     queryFn: getCategoriesWithCounts,
-    staleTime: 1000 * 60 * 5,
+    initialData: categoriesData,
+    staleTime: 1000 * 10, // 10 seconds live refresh
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
   });
 
   const topCategories = useMemo(() => {
@@ -95,17 +99,122 @@ export default function Hero({ initialData }) {
       <style>{heroStyles}</style>
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        {/* Parent container bounding Banner Slider & Right Promo Cards */}
+        {/* ================= 3-COLUMN HERO GRID (Structure 3: Left Menu + Center Slider + Right Flash Deal) ================= */}
         <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-12 lg:items-stretch">
 
-          {/* ================= MAIN BANNER SLIDER (Takes 8 columns or 9 columns) ================= */}
-          <div className="lg:col-span-8 xl:col-span-9 flex flex-col justify-center aspect-[12/5] w-full">
+          {/* ================= COLUMN 1 (LEFT): CATEGORY & DEPARTMENT MENU ================= */}
+          <div className="hidden lg:flex lg:col-span-3 flex-col justify-between rounded-2xl border border-zinc-200/90 dark:border-white/[0.08] bg-white dark:bg-zinc-950 p-4 shadow-sm h-[440px]">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-white/[0.06] shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="size-8 rounded-xl bg-gradient-to-tr from-amber-500/20 via-amber-400/25 to-amber-500/10 border border-amber-400/40 text-amber-500 dark:text-amber-400 flex items-center justify-center shrink-0 shadow-xs">
+                  <LayoutGrid className="size-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                    Categories
+                  </h3>
+                  <p className="text-[10px] text-zinc-400 font-medium">Browse department</p>
+                </div>
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 border border-zinc-200/60 dark:border-zinc-800">
+                {topCategories.length} Active
+              </span>
+            </div>
+
+            {/* Category Rows */}
+            <div className="flex-1 py-2 overflow-y-auto no-scrollbar space-y-1.5">
+              {/* Dynamic Root Categories */}
+              {isCategoriesLoading ? (
+                Array.from({ length: 3 }).map((_, idx) => (
+                  <div key={idx} className="flex items-center justify-between p-2 animate-pulse">
+                    <div className="flex items-center gap-2.5">
+                      <div className="size-8 rounded-lg bg-zinc-200 dark:bg-zinc-800" />
+                      <div className="h-3.5 w-24 rounded bg-zinc-200 dark:bg-zinc-800" />
+                    </div>
+                    <div className="h-3 w-5 rounded bg-zinc-200 dark:bg-zinc-800" />
+                  </div>
+                ))
+              ) : (
+                <div className="space-y-1">
+                  {topCategories.map((cat) => {
+                    const childrenCount = (cat.children || []).reduce((acc, c) => acc + (c.productCount || 0), 0);
+                    const totalProducts = Math.max(cat.productCount || 0, childrenCount);
+
+                    return (
+                      <div key={cat._id || cat.slug} className="space-y-1">
+                        <Link
+                          href={`/products?category=${cat.slug}`}
+                          className="group flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-white/[0.05] transition-all text-xs font-bold text-slate-900 dark:text-zinc-100"
+                        >
+                          <div className="flex items-center gap-2.5 truncate min-w-0">
+                            {cat.image ? (
+                              <img
+                                src={cat.image}
+                                alt={cat.name}
+                                className="size-8 rounded-lg object-cover bg-zinc-100 dark:bg-zinc-800 shrink-0 group-hover:scale-105 transition-transform border border-zinc-200/50 dark:border-zinc-800"
+                              />
+                            ) : (
+                              <div className="size-8 rounded-lg bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center text-xs font-black text-slate-900 dark:text-zinc-200 shrink-0 border border-zinc-200/60 dark:border-zinc-800">
+                                {(cat.name || "C").charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                            <div className="truncate">
+                              <span className="truncate block font-bold text-xs group-hover:text-amber-500 transition-colors">
+                                {cat.name}
+                              </span>
+                              <span className="text-[10px] text-zinc-400 font-medium truncate block">
+                                {totalProducts} {totalProducts === 1 ? "Product" : "Products"}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center shrink-0 text-zinc-400 group-hover:text-amber-500 transition-colors">
+                            <ChevronRight className="size-4 group-hover:translate-x-0.5 transition-transform" />
+                          </div>
+                        </Link>
+
+                        {/* Subcategories tags with individual product count */}
+                        {Array.isArray(cat.children) && cat.children.length > 0 && (
+                          <div className="pl-11 pr-2 pb-0.5 flex flex-wrap gap-1.5">
+                            {cat.children.map((sub) => (
+                              <Link
+                                key={sub._id || sub.slug}
+                                href={`/products?category=${sub.slug}`}
+                                className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-md bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-zinc-700 hover:text-black dark:text-zinc-300 dark:hover:text-white transition-all border border-zinc-200/60 dark:border-zinc-800/80"
+                              >
+                                <span className="capitalize">{sub.name}</span>
+                                <span className="text-[9px] font-bold text-zinc-400 dark:text-zinc-500">
+                                  ({sub.productCount || 0})
+                                </span>
+                              </Link>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Footer: View All */}
+            <Link
+              href="/products"
+              className="pt-2.5 border-t border-zinc-100 dark:border-white/[0.06] flex items-center justify-between text-xs font-bold text-zinc-600 hover:text-black dark:text-zinc-400 dark:hover:text-white transition-colors px-1 shrink-0 group"
+            >
+              <span>Explore All Products</span>
+              <ArrowUpRight className="size-3.5 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+            </Link>
+          </div>
+
+          {/* ================= COLUMN 2 (CENTER): MAIN BANNER SLIDER ================= */}
+          <div className="col-span-12 lg:col-span-6 flex flex-col justify-center h-[200px] xs:h-[240px] sm:h-[340px] lg:h-[440px] w-full">
             {isBannerLoading ? (
-              <div className="flex size-full items-center justify-center rounded-none border border-border bg-muted/30">
+              <div className="flex size-full items-center justify-center rounded-2xl border border-border bg-muted/30">
                 <div className="size-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
               </div>
             ) : banners.length > 0 ? (
-              <div className="relative overflow-hidden rounded-none border border-border/60 shadow-sm size-full">
+              <div className="relative overflow-hidden rounded-2xl border border-zinc-200/80 dark:border-white/[0.08] shadow-xs size-full group">
                 <Swiper
                   modules={[Autoplay, Pagination, Navigation]}
                   speed={800}
@@ -132,10 +241,10 @@ export default function Hero({ initialData }) {
 
                   {banners.length > 1 && (
                     <>
-                      <button className="hero-prev absolute left-3 top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full bg-background/80 text-foreground shadow-md backdrop-blur-sm transition-all hover:bg-background hover:scale-105">
+                      <button className="hero-prev absolute left-3 top-1/2 z-10 hidden sm:flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/40 hover:bg-black/75 text-white backdrop-blur-md border border-white/20 shadow-lg transition-all hover:scale-105 active:scale-95 cursor-pointer">
                         <ChevronLeft className="size-5" />
                       </button>
-                      <button className="hero-next absolute right-3 top-1/2 z-10 flex size-9 -translate-y-1/2 items-center justify-center rounded-full bg-background/80 text-foreground shadow-md backdrop-blur-sm transition-all hover:bg-background hover:scale-105">
+                      <button className="hero-next absolute right-3 top-1/2 z-10 hidden sm:flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/40 hover:bg-black/75 text-white backdrop-blur-md border border-white/20 shadow-lg transition-all hover:scale-105 active:scale-95 cursor-pointer">
                         <ChevronRight className="size-5" />
                       </button>
                     </>
@@ -145,128 +254,114 @@ export default function Hero({ initialData }) {
             ) : null}
           </div>
 
-          {/* ================= RIGHT COLUMN: PROMO CARDS (Featured Store + Flash Deal) ================= */}
-          <div className="hidden lg:col-span-4 xl:col-span-3 lg:flex lg:flex-col justify-between gap-3.5 h-full overflow-hidden">
+          {/* ================= COLUMN 3 (RIGHT): FLASH DEAL SHOWCASE CARD ================= */}
+          <div className="hidden lg:flex lg:col-span-3 flex-col justify-between rounded-2xl border border-zinc-200/90 dark:border-white/[0.08] bg-white/95 dark:bg-zinc-950/95 backdrop-blur-md p-4 shadow-sm h-[440px] overflow-hidden relative">
 
-            {/* Card 1: Featured Store (Top Vendor by Order Count) */}
-            <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-3.5 sm:p-4 shadow-xs flex flex-col justify-between gap-3 shrink-0 dark:bg-zinc-950 dark:border-zinc-800">
-              <div className="flex items-center justify-between">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-black text-white border border-zinc-800 px-2.5 py-1 text-xs font-bold dark:bg-white dark:text-black dark:border-zinc-200">
-                  <Sparkles className="size-3.5 text-white dark:text-black" /> Featured Store
-                </span>
-                <Store className="size-4 text-zinc-400 dark:text-zinc-500" />
-              </div>
-
-              {featuredVendor ? (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    {featuredVendor.vendorInfo?.shopLogo || featuredVendor.avatar ? (
-                      <img
-                        src={featuredVendor.vendorInfo?.shopLogo || featuredVendor.avatar}
-                        alt={featuredVendor.vendorInfo?.shopName || featuredVendor.name}
-                        className="size-12 rounded-2xl object-cover border border-zinc-200/60 bg-white shrink-0 shadow-2xs dark:border-zinc-800"
-                      />
-                    ) : (
-                      <div className="size-12 rounded-2xl bg-white dark:bg-zinc-900 flex items-center justify-center text-lg font-black text-black dark:text-white shrink-0 border border-zinc-200 shadow-2xs">
-                        {(featuredVendor.vendorInfo?.shopName || featuredVendor.name || "S").charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                    <div className="truncate flex-1 min-w-0">
-                      <h4 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate">
-                        {featuredVendor.vendorInfo?.shopName || featuredVendor.name || "Featured Store"}
-                      </h4>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5 font-medium">
-                        {featuredVendor.email}
-                      </p>
-                    </div>
-                  </div>
-
-                  <Link
-                    href={`/products?vendor=${featuredVendor._id}`}
-                    className="block w-full rounded-full bg-black hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 py-1.5 text-center text-xs sm:text-sm font-bold text-white transition-all shadow-xs cursor-pointer"
-                  >
-                    Visit Store
-                  </Link>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="size-12 rounded-2xl bg-white dark:bg-zinc-900 flex items-center justify-center text-lg font-black text-black dark:text-white shrink-0 border border-zinc-200 dark:border-zinc-800 shadow-2xs">
-                      S
-                    </div>
-                    <div className="truncate flex-1 min-w-0">
-                      <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate">StylishTrend Verified Store</h4>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5 font-medium">vendor@stylishtrend.com</p>
-                    </div>
-                  </div>
-                  <Link
-                    href="/products"
-                    className="block w-full rounded-full bg-black hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 py-1.5 text-center text-xs sm:text-sm font-bold text-white transition-all shadow-xs cursor-pointer"
-                  >
-                    Visit Store
-                  </Link>
-                </div>
-              )}
+            {/* Header: Glassmorphism Pill Countdown + Hot Deal Badge */}
+            <div className="flex items-center justify-between gap-2 shrink-0 pb-2 border-b border-zinc-100 dark:border-white/[0.06]">
+              <CountdownTimer variant="pill" />
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-500/10 text-rose-500 border border-rose-500/25">
+                <Flame className="size-3 fill-rose-500 text-rose-500 animate-pulse" /> Hot Deal
+              </span>
             </div>
 
-            {/* Card 2: Daily Flash Sale Highlight */}
-            <div className="rounded-2xl border border-[#FFE8D6] bg-[#FFF8F0] p-3.5 sm:p-4 shadow-xs flex flex-col justify-start gap-2.5 shrink-0 dark:bg-slate-900 dark:border-slate-800">
-
-              {/* 1. Header Badge */}
-              <div className="flex items-center justify-between shrink-0">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-[#FFEBEF] border border-rose-200/80 px-2.5 py-1 text-xs font-bold text-[#FF1E56] dark:bg-rose-950/40 dark:border-rose-900/50 dark:text-rose-300">
-                  <Zap className="size-3.5 fill-[#FF1E56]" /> Flash Sale
-                </span>
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">LIMITED</span>
+            {/* Dynamic Product Showcase */}
+            {isFlashLoading ? (
+              <div className="my-auto space-y-3 animate-pulse">
+                <div className="w-full h-44 rounded-xl bg-zinc-200 dark:bg-zinc-800" />
+                <div className="h-4 w-3/4 rounded bg-zinc-200 dark:bg-zinc-800" />
+                <div className="h-5 w-1/3 rounded bg-zinc-200 dark:bg-zinc-800" />
+                <div className="h-2 w-full rounded-full bg-zinc-200 dark:bg-zinc-800" />
               </div>
+            ) : flashProducts.length > 0 ? (
+              <div className="my-auto py-1 overflow-hidden w-full">
+                <Swiper
+                  modules={[Autoplay]}
+                  speed={700}
+                  autoplay={{ delay: 3500, disableOnInteraction: false }}
+                  loop={flashProducts.length > 1}
+                  className="w-full"
+                >
+                  {flashProducts.map((fp) => {
+                    const hasDiscount = fp.discountPercentage > 0;
+                    const discountedPrice = hasDiscount
+                      ? Math.round(fp.price * (1 - fp.discountPercentage / 100))
+                      : fp.price;
+                    const stockCount = typeof fp.stock === "number" ? fp.stock : 8;
+                    const soldPercentage = Math.min(95, Math.max(30, 100 - (stockCount * 5)));
 
-              {/* 2. Product Row */}
-              {flashProducts.length > 0 ? (
-                <div className="h-13 sm:h-14 overflow-hidden shrink-0">
-                  <Swiper
-                    modules={[Autoplay]}
-                    speed={800}
-                    autoplay={{ delay: 3000, disableOnInteraction: false }}
-                    loop={flashProducts.length > 1}
-                    className="w-full h-full"
-                  >
-                    {flashProducts.map((fp) => (
-                      <SwiperSlide key={fp._id || fp.id} className="h-full flex items-center">
-                        <Link href={`/product/${fp._id}`} className="group flex gap-3 items-center w-full">
-                          <img
-                            src={fp.thumbnail || fp.images?.[0] || fp.image}
-                            alt={fp.title || fp.name}
-                            className="size-11 sm:size-12 rounded-xl object-cover border border-slate-200/60 bg-white shrink-0 dark:border-slate-800"
-                          />
-                          <div className="truncate flex-1 min-w-0">
-                            <h5 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate group-hover:underline transition-colors">{fp.title || fp.name}</h5>
-                            <div className="flex items-center gap-2 mt-0.5">
-                              <span className="text-sm sm:text-base font-black text-black dark:text-white">৳{fp.discountPercentage > 0 ? (fp.price * (1 - fp.discountPercentage / 100)).toFixed(0) : fp.price}</span>
-                              {fp.discountPercentage > 0 && (
-                                <span className="text-xs text-slate-400 line-through">৳{fp.price}</span>
+                    return (
+                      <SwiperSlide key={fp._id || fp.id}>
+                        <Link href={`/product/${fp._id}`} className="group block w-full space-y-2">
+                          {/* Large Product Image with Floating Discount Badge */}
+                          <div className="relative w-full h-[190px] rounded-xl overflow-hidden bg-zinc-50 dark:bg-zinc-900 border border-zinc-200/80 dark:border-white/[0.06]">
+                            <img
+                              src={fp.thumbnail || fp.images?.[0] || fp.image}
+                              alt={fp.title || fp.name}
+                              className="size-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            />
+                            {hasDiscount && (
+                              <span className="absolute top-2.5 left-2.5 bg-rose-600 text-white text-[10px] font-black px-2 py-0.5 rounded-md shadow-sm backdrop-blur-xs">
+                                -{Math.round(fp.discountPercentage)}%
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Product Title & Prices */}
+                          <div className="space-y-0.5">
+                            <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate group-hover:text-primary transition-colors">
+                              {fp.title || fp.name}
+                            </h4>
+                            <div className="flex items-baseline gap-2">
+                              <span className="text-base sm:text-lg font-black text-slate-950 dark:text-white tracking-tight">
+                                ৳{discountedPrice}
+                              </span>
+                              {hasDiscount && (
+                                <span className="text-xs text-slate-400 line-through">
+                                  ৳{fp.price}
+                                </span>
                               )}
+                            </div>
+                          </div>
+
+                          {/* Dynamic Stock Urgency Meter */}
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between text-[11px] font-bold">
+                              <span className="text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                                <Flame className="size-3 fill-rose-500" /> Only {stockCount} left!
+                              </span>
+                              <span className="text-slate-400 text-[10px] uppercase font-semibold">
+                                Selling Fast
+                              </span>
+                            </div>
+                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+                              <div
+                                className="h-full rounded-full bg-gradient-to-r from-amber-500 to-rose-500 transition-all duration-500"
+                                style={{ width: `${soldPercentage}%` }}
+                              />
                             </div>
                           </div>
                         </Link>
                       </SwiperSlide>
-                    ))}
-                  </Swiper>
-                </div>
-              ) : null}
-
-              {/* 3. Countdown Timer */}
-              <div className="flex justify-center shrink-0">
-                <CountdownTimer size="sm" />
+                    );
+                  })}
+                </Swiper>
               </div>
+            ) : (
+              <div className="my-auto py-4 text-center space-y-1">
+                <p className="text-xs font-bold text-slate-700 dark:text-slate-300">Daily Flash Drops</p>
+                <p className="text-[11px] text-slate-400">Exclusive limited-time deals live now</p>
+              </div>
+            )}
 
-              {/* 4. Order Now Button */}
-              <Link
-                href="/products"
-                className="block w-full rounded-full bg-black hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 py-1.5 text-center text-xs sm:text-sm font-extrabold text-white transition-all shadow-md shrink-0 cursor-pointer"
-              >
-                Order Now
-              </Link>
-            </div>
+            {/* Bottom Action Button */}
+            <Link
+              href="/flash-sale"
+              className="w-full rounded-xl bg-zinc-950 hover:bg-black dark:bg-white dark:text-black dark:hover:bg-zinc-200 py-2.5 px-3 text-center text-xs font-black text-white flex items-center justify-center gap-1.5 transition-all shadow-sm hover:scale-[1.01] active:scale-95 cursor-pointer group shrink-0"
+            >
+              <span>View Flash Sale</span>
+              <ArrowUpRight className="size-3.5 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+            </Link>
 
           </div>
 

@@ -11,6 +11,7 @@ import OrderModal from "@/components/ui/OrderModal";
 import ProductImageModal from "@/components/ui/ProductImageModal";
 import { useAuth } from "@/hooks/useAuth";
 import { useAddToCart } from "@/hooks/useAddToCart";
+import { setDirectCheckoutItem } from "@/utils/localCart";
 
 export default function NewArrivalsProductCard({ product, index }) {
   const router = useRouter();
@@ -48,6 +49,12 @@ export default function NewArrivalsProductCard({ product, index }) {
     e.stopPropagation();
     if (isOutOfStock || isAdminOrVendor) return;
 
+    if (hasOptions) {
+      setOrderModalMode("checkout");
+      setShowOrderModal(true);
+      return;
+    }
+
     let defaultSize = "";
     if (Array.isArray(product.sizes) && product.sizes.length > 0) defaultSize = product.sizes[0];
     else if (typeof product.sizes === "string" && product.sizes.trim()) defaultSize = product.sizes.split(",")[0].trim();
@@ -55,8 +62,22 @@ export default function NewArrivalsProductCard({ product, index }) {
     const defaultColor = product.colors?.[0]?.name || "";
     const defaultColorImage = product.colors?.[0]?.image || "";
 
-    await addToCart(product, 1, defaultSize, defaultColor, defaultColorImage, false);
-    router.push("/checkout");
+    const directItem = {
+      productId: product._id,
+      title: product.title,
+      thumbnail: defaultColorImage || product.thumbnail || product.images?.[0] || "",
+      price: hasDiscount ? Number(discountedPrice) : Number(product.price),
+      quantity: 1,
+      size: defaultSize || "",
+      color: defaultColor || "",
+      colorImage: defaultColorImage || "",
+      stock: product.stock,
+      category: product.category || "",
+      attributes: {},
+    };
+
+    setDirectCheckoutItem(directItem);
+    router.push("/checkout?direct=1");
   };
 
   const handleOpenImageModal = (e) => {
@@ -69,11 +90,11 @@ export default function NewArrivalsProductCard({ product, index }) {
     <>
       <div className="shrink-0 w-[165px] xs:w-[185px] sm:w-[220px] md:w-[250px] transition-opacity duration-300">
         <div className="group flex flex-col h-auto w-full overflow-hidden rounded-2xl border border-border bg-card shadow-2xs transition-all duration-300 hover:shadow-md">
-          <Link href={`/product/${product._id}`} className="relative aspect-square w-full overflow-hidden bg-muted/40 block shrink-0 p-2 flex items-center justify-center group/img">
+          <Link href={`/product/${product._id}`} className="relative aspect-square w-full overflow-hidden bg-muted/20 block shrink-0 group/img">
             <img
               src={product.thumbnail || product.images?.[0] || null}
               alt={product.title}
-              className="h-full w-full object-contain transition-transform duration-300 ease-out group-hover:scale-110 hover:scale-110 active:scale-105 group-active:scale-105 group-hover:drop-shadow-md"
+              className="size-full object-cover transition-transform duration-300 ease-out group-hover:scale-105 active:scale-95 mx-auto"
               loading="lazy"
             />
 
@@ -81,14 +102,14 @@ export default function NewArrivalsProductCard({ product, index }) {
             <button
               type="button"
               onClick={handleOpenImageModal}
-              className="absolute bottom-2 right-2 z-20 flex size-8 items-center justify-center rounded-full bg-background/90 text-foreground shadow-md backdrop-blur-md hover:bg-primary hover:text-primary-foreground active:scale-90 transition-all duration-300 opacity-0 group-hover/img:opacity-100 transform translate-y-2 group-hover/img:translate-y-0 cursor-pointer border border-border/60"
+              className="absolute bottom-2 right-2 z-20 flex size-7 sm:size-8 items-center justify-center rounded-full bg-background/90 text-foreground shadow-md backdrop-blur-md hover:bg-primary hover:text-primary-foreground active:scale-90 transition-all duration-300 opacity-0 group-hover/img:opacity-100 transform translate-y-2 group-hover/img:translate-y-0 cursor-pointer border border-border/60"
               title="Enlarge Image"
             >
-              <Eye className="size-4" />
+              <Eye className="size-3.5 sm:size-4" />
             </button>
 
             {hasDiscount && (
-              <div className="absolute left-2 top-2 z-10 rounded-full badge-gold px-2 py-0.5 text-[10px] font-black tracking-tight shadow-sm">
+              <div className="absolute left-1.5 top-1.5 sm:left-2 sm:top-2 z-10 rounded-md badge-gold px-1.5 sm:px-2 py-0.5 text-[9px] sm:text-[10px] font-black tracking-tight shadow-sm">
                 -{Math.round(product.discountPercentage)}%
               </div>
             )}
@@ -101,7 +122,7 @@ export default function NewArrivalsProductCard({ product, index }) {
             )}
           </Link>
 
-          <div className="flex shrink-0 flex-col p-2.5 sm:p-3 bg-card gap-1.5">
+          <div className="flex shrink-0 flex-col p-2 sm:p-2.5 bg-card gap-1.5">
             <div className="space-y-0.5 sm:space-y-1">
               <Link href={`/product/${product._id}`} className="block">
                 <h3 className="line-clamp-1 text-xs sm:text-sm font-bold text-foreground group-hover:text-primary dark:group-hover:text-accent transition-colors">
@@ -127,23 +148,26 @@ export default function NewArrivalsProductCard({ product, index }) {
               </div>
             </div>
 
-            <div className="flex items-center gap-1.5 pt-0.5 w-full mt-auto">
+            <div className="flex items-center gap-1 sm:gap-1.5 pt-0.5 w-full mt-auto">
               <button
+                type="button"
                 disabled={isOutOfStock || isAdminOrVendor}
                 onClick={handleOpenAddToCartModal}
                 title={isAdminOrVendor ? "Admins cannot purchase" : "Add to Cart"}
-                className={`flex items-center justify-center gap-1.5 rounded-full border border-border bg-secondary hover:bg-secondary/80 text-secondary-foreground p-2 lg:py-1.5 lg:px-3 text-[10px] font-extrabold transition-all active:scale-95 shrink-0 ${isOutOfStock || isAdminOrVendor ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} shadow-2xs`}
+                className={`size-7 sm:size-8 lg:size-auto lg:h-8 lg:px-3 shrink-0 flex items-center justify-center gap-1.5 rounded-full border border-border bg-secondary hover:bg-secondary/80 text-secondary-foreground transition-all active:scale-95 ${isOutOfStock || isAdminOrVendor ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} shadow-2xs`}
+                aria-label="Add to cart"
               >
-                <ShoppingCart className="size-3.5 sm:size-3 shrink-0 text-secondary-foreground" />
-                <span className="hidden lg:inline truncate whitespace-nowrap">Add to Cart</span>
+                <ShoppingCart className="size-3 sm:size-3.5 shrink-0 text-secondary-foreground" />
+                <span className="hidden lg:inline text-xs font-bold whitespace-nowrap">Add to Cart</span>
               </button>
               <button
+                type="button"
                 disabled={isOutOfStock || isAdminOrVendor}
                 onClick={handleDirectOrderNow}
                 title={isAdminOrVendor ? "Admins cannot purchase" : "Order Now"}
-                className={`flex-1 flex items-center justify-center gap-1.5 rounded-full btn-action-gold py-1.5 px-3 text-[11px] sm:text-[10px] font-extrabold transition-all duration-200 active:scale-[0.98] ${isOutOfStock || isAdminOrVendor ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} shadow-xs`}
+                className={`flex-1 min-w-0 h-7 sm:h-8 lg:h-8 flex items-center justify-center gap-1 sm:gap-1.5 rounded-full btn-action-gold px-1.5 sm:px-2.5 lg:px-3 text-[9px] xs:text-[10px] sm:text-xs font-bold transition-all duration-200 active:scale-95 ${isOutOfStock || isAdminOrVendor ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} shadow-xs`}
               >
-                <Zap className="size-3.5 sm:size-3 fill-current shrink-0" />
+                <Zap className="size-2.5 sm:size-3 fill-current shrink-0" />
                 <span className="whitespace-nowrap">{isOutOfStock ? "Unavailable" : "Order Now"}</span>
               </button>
             </div>

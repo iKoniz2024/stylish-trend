@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useWatch } from "react-hook-form";
@@ -17,7 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatBDT } from "@/utils/currency";
 import { Helmet } from "react-helmet-async";
 import useSettings from "@/hooks/useSettings";
-import { getLocalCart, clearLocalCart } from "@/utils/localCart";
+import { getLocalCart, clearLocalCart, getDirectCheckoutItem, clearDirectCheckoutItem } from "@/utils/localCart";
 import { useEffect } from "react";
 import { event as trackPixelEvent } from "@/utils/fpixel";
 
@@ -70,13 +70,23 @@ export default function Checkout({ children }) {
     },
   });
 
+  const searchParams = useSearchParams();
+  const isDirect = searchParams.get("direct") === "1";
+
   const { data: cart, isLoading } = useQuery({
-    queryKey: ["localCart"],
+    queryKey: ["checkoutItems", isDirect],
     queryFn: () => {
+      if (isDirect) {
+        const directItem = getDirectCheckoutItem();
+        const items = directItem ? [directItem] : [];
+        const totalItems = items.reduce((sum, item) => sum + (item.quantity ?? 1), 0);
+        const totalPrice = items.reduce((sum, item) => sum + (item.price * (item.quantity ?? 1)), 0);
+        return { items, totalItems, totalPrice, isDirect: true };
+      }
       const items = getLocalCart();
       const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
       const totalPrice = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      return { items, totalItems, totalPrice };
+      return { items, totalItems, totalPrice, isDirect: false };
     },
   });
 
@@ -120,8 +130,12 @@ export default function Checkout({ children }) {
         currency: "BDT",
       });
       toast.success("Order placed successfully!");
-      clearLocalCart();
-      refetchCartCount(0);
+      if (isDirect) {
+        clearDirectCheckoutItem();
+      } else {
+        clearLocalCart();
+        refetchCartCount(0);
+      }
       if (data?.insertedId) {
         sendOrderInvoice(data.insertedId).catch(() => { });
       }

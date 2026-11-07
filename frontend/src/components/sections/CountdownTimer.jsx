@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { Zap } from "lucide-react";
 
 function getTimeRemaining() {
   const now = new Date();
@@ -43,7 +44,7 @@ function Separator({ size = "md" }) {
   );
 }
 
-export default function CountdownTimer({ size = "md" }) {
+export default function CountdownTimer({ size = "md", variant = "boxes" }) {
   const [time, setTime] = useState(getTimeRemaining);
 
   const tick = useCallback(() => {
@@ -65,6 +66,25 @@ export default function CountdownTimer({ size = "md" }) {
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [tick]);
+
+  if (variant === "pill") {
+    return (
+      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/80 dark:bg-zinc-900/90 text-white backdrop-blur-md text-[11px] font-mono font-bold tracking-tight border border-white/15 shadow-sm">
+        <Zap className="size-3 text-amber-400 fill-amber-400 animate-pulse shrink-0" />
+        <span suppressHydrationWarning className="tabular-nums">
+          {String(time.hours).padStart(2, "0")}h
+        </span>
+        <span className="text-white/40">:</span>
+        <span suppressHydrationWarning className="tabular-nums">
+          {String(time.minutes).padStart(2, "0")}m
+        </span>
+        <span className="text-white/40">:</span>
+        <span suppressHydrationWarning className="tabular-nums">
+          {String(time.seconds).padStart(2, "0")}s
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className={`flex items-center ${size === "sm" ? "gap-1.5 sm:gap-2 justify-center" : "gap-2 sm:gap-3"}`}>

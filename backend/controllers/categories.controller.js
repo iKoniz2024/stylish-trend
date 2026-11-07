@@ -19,7 +19,7 @@ const checkCircularDependency = async (categoriesCollection, categoryId, targetP
     return false;
 };
 
-const buildTree = (categories, parentId = null) => {
+const buildTree = (categories, parentId = null, getCountForCat = null) => {
     return categories
         .filter(cat => {
             const pId = typeof cat.parentId === "object" ? cat.parentId?._id : cat.parentId;
@@ -29,7 +29,7 @@ const buildTree = (categories, parentId = null) => {
             return String(pId) === String(parentId) || pId === parentId;
         })
         .map(cat => {
-            const childItems = buildTree(categories, cat._id);
+            const childItems = buildTree(categories, cat._id, getCountForCat);
             const embeddedChildren = Array.isArray(cat.children) ? cat.children : [];
             const combinedChildren = [];
             const processedSlugs = new Set();
@@ -51,7 +51,11 @@ const buildTree = (categories, parentId = null) => {
             embeddedChildren.forEach(emb => {
                 const embIdStr = String(emb._id || emb.id || emb.slug);
                 if (!processedSlugs.has(emb.slug) && !processedSlugs.has(embIdStr)) {
-                    combinedChildren.push(emb);
+                    const count = getCountForCat ? getCountForCat(emb) : (emb.productCount || 0);
+                    combinedChildren.push({
+                        ...emb,
+                        productCount: count
+                    });
                 }
             });
 
@@ -127,6 +131,7 @@ const createCategory = async (req, res) => {
         }
 
         clearCache("categories");
+        clearCache("categoriesWithCounts");
 
         res.status(201).send({
             message: "Category created successfully",
@@ -142,37 +147,74 @@ const createCategory = async (req, res) => {
 
 const getCategoriesWithCounts = async (req, res) => {
     try {
-        const categoriesWithCounts = await withCache("categoriesWithCounts", 120, async () => {
+        const categoriesWithCounts = await withCache("categoriesWithCounts", 5, async () => {
             const db = getDB();
             const categoriesCollection = db.collection("categories");
             const productsCollection = db.collection("products");
 
             const categories = await categoriesCollection.find().sort({ sortOrder: 1, name: 1 }).toArray();
 
+            // Fetch unique category tags per product to prevent duplicate counting
             const countResult = await productsCollection.aggregate([
                 {
                     $project: {
                         allCats: {
-                            $concatArrays: [
-                                { $cond: [{ $isArray: "$categories" }, "$categories", []] },
-                                { $cond: [{ $ne: ["$primaryCategory", null] }, ["$primaryCategory"], []] },
-                                { $cond: [{ $ne: ["$category", null] }, ["$category"], []] }
+                            $setUnion: [
+                                {
+                                    $map: {
+                                        input: { $cond: [{ $isArray: "$categories" }, "$categories", []] },
+                                        as: "c",
+                                        in: { $toLower: { $toString: "$$c" } }
+                                    }
+                                },
+                                {
+                                    $cond: [
+                                        { $and: [{ $ne: ["$primaryCategory", null] }, { $ne: ["$primaryCategory", ""] }] },
+                                        [{ $toLower: { $toString: "$primaryCategory" } }],
+                                        []
+                                    ]
+                                },
+                                {
+                                    $cond: [
+                                        { $and: [{ $ne: ["$category", null] }, { $ne: ["$category", ""] }] },
+                                        [{ $toLower: { $toString: "$category" } }],
+                                        []
+                                    ]
+                                }
                             ]
                         }
                     }
                 },
                 { $unwind: "$allCats" },
-                { $group: { _id: "$allCats", count: { $sum: 1 } } }
+                {
+                    $group: {
+                        _id: "$allCats",
+                        count: { $sum: 1 }
+                    }
+                }
             ]).toArray();
 
-            const countMap = new Map(countResult.map(r => [String(r._id), r.count]));
-
-            const withCounts = categories.map(cat => {
-                const count = (countMap.get(String(cat._id)) || 0) + (countMap.get(cat.slug) || 0);
-                return { ...cat, productCount: count };
+            const countMap = new Map();
+            countResult.forEach(r => {
+                if (r._id) {
+                    countMap.set(String(r._id).toLowerCase(), r.count);
+                }
             });
 
-            return buildTree(withCounts);
+            const getCountForCat = (c) => {
+                const idStr = String(c._id || c.id || "").toLowerCase();
+                const slugStr = String(c.slug || "").toLowerCase();
+                const byId = idStr ? (countMap.get(idStr) || 0) : 0;
+                const bySlug = slugStr ? (countMap.get(slugStr) || 0) : 0;
+                // Use Math.max to prevent double-counting when a product contains both category id and slug
+                return Math.max(byId, bySlug);
+            };
+
+            const withCounts = categories.map(cat => {
+                return { ...cat, productCount: getCountForCat(cat) };
+            });
+
+            return buildTree(withCounts, null, getCountForCat);
         });
 
         res.send(categoriesWithCounts);
@@ -445,6 +487,7 @@ const updateCategory = async (req, res) => {
         }
 
         clearCache("categories");
+        clearCache("categoriesWithCounts");
         const freshCategory = existingCategory ? await categoriesCollection.findOne({ _id: existingCategory._id }) : null;
         return res.send({ message: "Category updated successfully", category: freshCategory });
 
@@ -523,6 +566,7 @@ const deleteCategory = async (req, res) => {
         }
 
         clearCache("categories");
+        clearCache("categoriesWithCounts");
         res.send({ message: "Category deleted successfully" });
 
     } catch (error) {

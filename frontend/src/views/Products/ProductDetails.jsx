@@ -15,7 +15,6 @@ import {
   ChevronRight,
   Home,
   ShoppingCart,
-  ChevronDown,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { getProductById } from "@/services/product.api";
@@ -24,11 +23,13 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatBDT } from "@/utils/currency";
+import { setDirectCheckoutItem } from "@/utils/localCart";
 import { Helmet } from "react-helmet-async";
 import useSettings from "@/hooks/useSettings";
 import { useAuth } from "@/hooks/useAuth";
 import { event as trackPixelEvent } from "@/utils/fpixel";
 import ProductImageZoom from "@/components/ui/ProductImageZoom";
+import SizeChartModal from "@/components/ui/SizeChartModal";
 
 
 
@@ -104,6 +105,7 @@ export default function ProductDetails({ children }) {
   const [activeDisplayImage, setActiveDisplayImage] = useState(null);
   const [quantity, setQuantity] = useState(1);
   const [activeTab, setActiveTab] = useState("description");
+  const [showSizeChartModal, setShowSizeChartModal] = useState(false);
 
   const { data: product, isLoading } = useQuery({
     queryKey: ["product", id],
@@ -219,6 +221,44 @@ export default function ProductDetails({ children }) {
     return true;
   };
 
+  const handleDirectOrderNow = () => {
+    if (availableSizes.length > 0 && !selectedSize) {
+      toast.error("Please select size");
+      return;
+    }
+    if (product?.colors?.length > 0 && !selectedColor) {
+      toast.error("Please select a color");
+      return;
+    }
+
+    const dynamicSpecs = Object.entries(selectedDynamicAttrs)
+      .map(([k, v]) => {
+        const label = k.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+        return `${label}: ${v}`;
+      })
+      .filter(Boolean)
+      .join(", ");
+
+    const finalSizeVariant = [selectedSize, dynamicSpecs].filter(Boolean).join(" | ");
+
+    const directItem = {
+      productId: product._id,
+      title: product.title,
+      thumbnail: selectedColor?.image || product.thumbnail || product.images?.[0] || "",
+      price: hasDiscount ? Number(discountedPrice) : Number(product.price),
+      quantity,
+      size: finalSizeVariant || "",
+      color: selectedColor?.name || "",
+      colorImage: selectedColor?.image || "",
+      stock: product.stock,
+      category: product.category || "",
+      attributes: selectedDynamicAttrs || {},
+    };
+
+    setDirectCheckoutItem(directItem);
+    router.push("/checkout?direct=1");
+  };
+
   if (isLoading) return <ProductSkeleton />;
 
   if (!product) {
@@ -255,10 +295,10 @@ export default function ProductDetails({ children }) {
         </div>
       </div>
 
-      <div className="container mx-auto px-4 py-6 lg:py-10">
-        <div className="flex flex-col gap-6 lg:flex-row">
+      <div className="container mx-auto px-4 py-6 lg:py-10 max-w-full overflow-hidden sm:overflow-visible">
+        <div className="flex flex-col gap-6 lg:flex-row min-w-0 w-full">
           {/* Left - Images lg:w-[35%] */}
-          <div className="flex flex-col gap-3 lg:w-[35%]">
+          <div className="flex flex-col gap-3 w-full lg:w-[35%] min-w-0">
             <ProductImageZoom
               src={mainDisplayImage}
               alt={product.title}
@@ -291,8 +331,8 @@ export default function ProductDetails({ children }) {
           </div>
 
           {/* Middle - Product Info lg:w-[35%] */}
-          <div className="flex flex-1 flex-col gap-4 lg:w-[35%]">
-            <h1 className="text-2xl font-bold text-foreground lg:text-3xl">
+          <div className="flex flex-1 flex-col gap-4 w-full lg:w-[35%] min-w-0">
+            <h1 className="text-2xl font-bold text-foreground lg:text-3xl break-words [overflow-wrap:anywhere]">
               {product.title}
             </h1>
 
@@ -321,7 +361,6 @@ export default function ProductDetails({ children }) {
                   <span className="text-sm font-bold text-foreground">
                     Color Family : <span className="font-normal text-muted-foreground">{selectedColor?.name || "Select a color"}</span>
                   </span>
-                  <ChevronDown className="size-4 text-foreground" />
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {product.colors.map((colorObj, index) => {
@@ -365,7 +404,11 @@ export default function ProductDetails({ children }) {
                   <span className="text-sm font-bold text-foreground">
                     Select Size : {selectedSize && <span className="font-normal text-muted-foreground">{selectedSize}</span>}
                   </span>
-                  <button type="button" className="rounded bg-secondary text-primary border border-border px-3 py-1.5 text-xs font-bold shadow-xs">
+                  <button
+                    type="button"
+                    onClick={() => setShowSizeChartModal(true)}
+                    className="rounded bg-secondary text-primary hover:bg-secondary/80 border border-border px-3 py-1.5 text-xs font-bold shadow-xs transition-all active:scale-95 cursor-pointer"
+                  >
                     Size Chart
                   </button>
                 </div>
@@ -443,27 +486,30 @@ export default function ProductDetails({ children }) {
               <span className="text-sm font-bold text-foreground">
                 Select Quantity :
               </span>
-              <div className="flex items-center gap-4">
-                <div className="flex items-center rounded border border-border">
-                  <button
-                    onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                    className="flex size-10 items-center justify-center text-foreground transition-colors hover:bg-muted"
-                  >
-                    <Minus className="size-4" />
-                  </button>
-                  <span className="flex size-10 items-center justify-center border-x border-border text-sm font-medium text-foreground">
-                    {quantity}
-                  </span>
-                  <button
-                    onClick={() => setQuantity(quantity + 1)}
-                    className="flex size-10 items-center justify-center text-foreground transition-colors hover:bg-muted"
-                  >
-                    <Plus className="size-4" />
-                  </button>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+                <div className="flex items-center justify-between sm:justify-start gap-3">
+                  <span className="text-xs font-semibold text-muted-foreground sm:hidden">Quantity:</span>
+                  <div className="flex items-center rounded border border-border">
+                    <button
+                      onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                      className="flex size-10 items-center justify-center text-foreground transition-colors hover:bg-muted"
+                    >
+                      <Minus className="size-4" />
+                    </button>
+                    <span className="flex size-10 items-center justify-center border-x border-border text-sm font-medium text-foreground">
+                      {quantity}
+                    </span>
+                    <button
+                      onClick={() => setQuantity(quantity + 1)}
+                      className="flex size-10 items-center justify-center text-foreground transition-colors hover:bg-muted"
+                    >
+                      <Plus className="size-4" />
+                    </button>
+                  </div>
                 </div>
 
                 {!isAdminOrVendor && (
-                  <div className="flex flex-1 items-center gap-2">
+                  <div className="flex flex-1 items-center gap-2 w-full">
                     <button
                       type="button"
                       disabled={product.stock === 0}
@@ -477,12 +523,7 @@ export default function ProductDetails({ children }) {
                     <button
                       type="button"
                       disabled={product.stock === 0}
-                      onClick={async () => {
-                        const ok = await handleAddToCart();
-                        if (ok) {
-                          router.push("/checkout");
-                        }
-                      }}
+                      onClick={handleDirectOrderNow}
                       className="btn-action-gold flex-1 rounded-full py-3 text-sm shrink-0"
                     >
                       Order Now
@@ -532,51 +573,7 @@ export default function ProductDetails({ children }) {
           </div>
 
           {/* Right - Extra Info lg:w-[30%] */}
-          <div className="flex flex-col gap-4 lg:w-[30%]">
-            {/* Policies */}
-            <div className="rounded border-2 border-dashed border-foreground p-4 text-xs font-medium text-foreground">
-              <ul className="space-y-3">
-                <li className="flex items-start gap-2">
-                  <svg className="mt-0.5 size-3 shrink-0 text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>
-                  <span>Cash on delivery available</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <svg className="mt-0.5 size-3 shrink-0 text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>
-                  <span>7 days return policy</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <svg className="mt-0.5 size-3 shrink-0 text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>
-                  <span>Fast home delivery across Bangladesh</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <svg className="mt-0.5 size-3 shrink-0 text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>
-                  <span>24/7 Customer Support: <a href="/orders" className="text-foreground hover:underline">Order Tracking</a></span>
-                </li>
-              </ul>
-            </div>
-
-            {/* Dynamic Product Specifications Table */}
-            {product?.attributes && Object.keys(product.attributes).length > 0 && (
-              <div className="mt-2 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-                <div className="bg-muted px-4 py-2.5 text-sm font-bold text-foreground border-b border-border">
-                  Specifications & Details
-                </div>
-                <div className="divide-y divide-border/60">
-                  {Object.entries(product.attributes).map(([key, val]) => {
-                    if (val === undefined || val === null || val === "" || key === "sizes" || key === "size") return null;
-                    const label = key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-                    const displayVal = Array.isArray(val) ? val.join(", ") : String(val);
-                    return (
-                      <div key={key} className="flex justify-between px-4 py-2.5 text-xs sm:text-sm">
-                        <span className="font-medium text-muted-foreground">{label}</span>
-                        <span className="font-semibold text-foreground text-right">{displayVal}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
+          <div className="flex flex-col gap-4 w-full lg:w-[30%] min-w-0">
             {/* Dynamic Size Measurement Block */}
             {product?.sizeMeasurements && product.sizeMeasurements.length > 0 && (() => {
               const columnKeysSet = new Set();
@@ -602,17 +599,17 @@ export default function ProductDetails({ children }) {
               };
 
               return (
-                <div className="mt-2 overflow-hidden rounded border border-border">
-                  <div className="bg-muted py-2 text-center text-sm font-bold text-foreground">
+                <div className="overflow-hidden rounded border border-border bg-card w-full max-w-full">
+                  <div className="bg-muted/50 px-3 py-2 text-xs font-semibold text-foreground">
                     Size Measurement (Inches)
                   </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm">
+                  <div className="overflow-x-auto w-full max-w-full">
+                    <table className="w-full text-left text-xs whitespace-nowrap">
                       <thead>
-                        <tr className="border-b border-border bg-muted/30 text-muted-foreground">
-                          <th className="px-3 py-2 font-semibold text-center">Size</th>
+                        <tr className="border-b border-border bg-muted/20 text-muted-foreground">
+                          <th className="px-2.5 py-1.5 font-medium">Size</th>
                           {columnKeys.map((key) => (
-                            <th key={key} className="px-3 py-2 font-semibold text-center">
+                            <th key={key} className="px-2.5 py-1.5 font-medium text-center">
                               {FIELD_LABELS[key] || key}
                             </th>
                           ))}
@@ -620,10 +617,10 @@ export default function ProductDetails({ children }) {
                       </thead>
                       <tbody className="divide-y divide-border">
                         {product.sizeMeasurements.map((m, i) => (
-                          <tr key={i} className="hover:bg-muted/20">
-                            <td className="px-3 py-2 font-bold text-foreground text-center">{m.size}</td>
+                          <tr key={i} className="hover:bg-muted/30">
+                            <td className="px-2.5 py-1.5 font-semibold text-foreground">{m.size}</td>
                             {columnKeys.map((key) => (
-                              <td key={key} className="px-3 py-2 text-foreground text-center">
+                              <td key={key} className="px-2.5 py-1.5 text-muted-foreground text-center">
                                 {m[key] || "-"}
                               </td>
                             ))}
@@ -635,6 +632,28 @@ export default function ProductDetails({ children }) {
                 </div>
               );
             })()}
+
+            {/* Policies */}
+            <div className="rounded border-2 border-dashed border-foreground p-4 text-xs font-medium text-foreground">
+              <ul className="space-y-3">
+                <li className="flex items-start gap-2">
+                  <svg className="mt-0.5 size-3 shrink-0 text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>
+                  <span>Cash on delivery available</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <svg className="mt-0.5 size-3 shrink-0 text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>
+                  <span>7 days return policy</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <svg className="mt-0.5 size-3 shrink-0 text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>
+                  <span>Fast home delivery across Bangladesh</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <svg className="mt-0.5 size-3 shrink-0 text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>
+                  <span>24/7 Customer Support: <a href="/orders" className="text-foreground hover:underline">Order Tracking</a></span>
+                </li>
+              </ul>
+            </div>
           </div>
         </div>
 
@@ -675,17 +694,68 @@ export default function ProductDetails({ children }) {
           </div>
         </div>
 
-        {/* Description Section */}
-        <div className="mt-10 border-t border-border pt-6">
-          <h3 className="text-base font-semibold text-foreground mb-4">Description</h3>
-          <div className="prose prose-sm max-w-none text-muted-foreground">
-            <p className="whitespace-pre-line">{product.description}</p>
-          </div>
+        {/* Description & Detailed Specifications Section */}
+        <div className="mt-12 border-t border-border pt-8 space-y-8 w-full min-w-0">
+          {/* Description Section */}
+          {product.description && (
+            <div className="w-full min-w-0">
+              <h3 className="text-lg font-bold text-foreground mb-3 flex items-center gap-2">
+                Product Description
+              </h3>
+              <div className="prose prose-sm max-w-none text-muted-foreground bg-card/40 rounded-xl border border-border p-4 sm:p-6 shadow-2xs w-full min-w-0 overflow-hidden">
+                <p className="whitespace-pre-line leading-relaxed break-words [overflow-wrap:anywhere]">{product.description}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Dynamic Product Specifications Table */}
+          {product?.attributes && Object.keys(product.attributes).length > 0 && (() => {
+            const validAttrs = Object.entries(product.attributes).filter(
+              ([key, val]) => val !== undefined && val !== null && val !== "" && key !== "sizes" && key !== "size"
+            );
+            if (validAttrs.length === 0) return null;
+
+            return (
+              <div className="w-full min-w-0">
+                <h3 className="text-lg font-bold text-foreground mb-3 flex items-center gap-2">
+                  Specifications & Details
+                </h3>
+                <div className="overflow-hidden rounded-xl border border-border bg-card shadow-xs w-full min-w-0">
+                  <div className="divide-y divide-border/60">
+                    {validAttrs.map(([key, val], idx) => {
+                      const label = key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+                      const displayVal = Array.isArray(val) ? val.join(", ") : String(val);
+                      return (
+                        <div
+                          key={key}
+                          className={`flex items-center justify-between gap-4 px-4 sm:px-6 py-3 text-xs sm:text-sm ${
+                            idx % 2 === 0 ? "bg-muted/25" : "bg-card"
+                          }`}
+                        >
+                          <span className="font-medium text-muted-foreground shrink-0">{label}</span>
+                          <span className="font-bold text-foreground text-right break-words [overflow-wrap:anywhere]">{displayVal}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Related Products Section */}
         <RelatedProducts currentProduct={product} />
       </div>
+
+      {/* Size Chart Modal */}
+      <SizeChartModal
+        open={showSizeChartModal}
+        onClose={() => setShowSizeChartModal(false)}
+        product={product}
+        selectedSize={selectedSize}
+        onSelectSize={(size) => setSelectedSize(size)}
+      />
     </>
   );
 }

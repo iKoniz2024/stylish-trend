@@ -22,7 +22,7 @@ export async function generateMetadata() {
   try {
     const res = await fetch(`${apiUrl}/settings`, {
       next: { revalidate: 3600 },
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(800),
     });
     
     if (res.ok) {

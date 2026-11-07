@@ -292,8 +292,10 @@ export default function OrderDetails({ children }) {
                 {copied ? "Copied!" : `ID: ${order._id}`}
               </button>
 
-              <div className="pb-2">
-                <ProgressTracker status={order.orderStatus} />
+              <div className="pb-2 overflow-x-auto no-scrollbar">
+                <div className="min-w-fit">
+                  <ProgressTracker status={order.orderStatus} />
+                </div>
               </div>
             </div>
           </div>

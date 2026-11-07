@@ -103,6 +103,7 @@ const createProduct = async (req, res) => {
 
         const result = await productsCollection.insertOne(newProduct);
         clearCache("products");
+        clearCache("categoriesWithCounts");
 
         res.status(201).send({
             message: "Product created successfully",
@@ -474,6 +475,7 @@ const updateProduct = async (req, res) => {
         );
 
         clearCache("products");
+        clearCache("categoriesWithCounts");
         res.send({ message: "Product updated successfully" });
 
     } catch (error) {
@@ -505,6 +507,7 @@ const deleteProduct = async (req, res) => {
         await productsCollection.deleteOne(buildIdQuery(id));
 
         clearCache("products");
+        clearCache("categoriesWithCounts");
         res.send({ message: "Product deleted successfully" });
 
     } catch (error) {

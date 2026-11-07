@@ -55,16 +55,17 @@ app.use(
 app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
 
-// Cache headers middleware for APIs - force no-store for authenticated / dynamic admin requests to prevent browser stale cache
+// Cache headers middleware for APIs - optimize public routes for fast edge/browser delivery, while keeping private routes secure
 app.use((req, res, next) => {
     if (req.method === "GET") {
         const hasAuth = Boolean(req.headers.authorization || req.cookies?.token);
-        if (hasAuth) {
+        if (hasAuth || req.path.startsWith("/api/auth") || req.path.startsWith("/api/cart") || req.path.startsWith("/api/orders")) {
             res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, private");
             res.setHeader("Pragma", "no-cache");
             res.setHeader("Expires", "0");
         } else {
-            res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+            // Public catalog data (categories, settings, banners, public products)
+            res.setHeader("Cache-Control", "public, s-maxage=60, stale-while-revalidate=300");
         }
     }
     next();
