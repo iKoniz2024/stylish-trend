@@ -67,16 +67,17 @@ export default function Hero({ initialData, categoriesData, flashSaleData }) {
 
   // Top Categories with Product Counts query (Live Dynamic Sync)
   const { data: topCategoriesData, isLoading: isCategoriesLoading } = useQuery({
-    queryKey: ["topCategoriesWithCounts"],
+    queryKey: ["categories-with-counts"],
     queryFn: getCategoriesWithCounts,
-    initialData: categoriesData,
-    staleTime: 1000 * 10, // 10 seconds live refresh
+    initialData: (Array.isArray(categoriesData) && categoriesData.length > 0) ? categoriesData : undefined,
+    staleTime: 1000 * 60 * 1,
+    gcTime: 1000 * 60 * 30,
     refetchOnMount: true,
     refetchOnWindowFocus: true,
   });
 
   const topCategories = useMemo(() => {
-    const raw = Array.isArray(topCategoriesData) ? topCategoriesData : [];
+    const raw = Array.isArray(topCategoriesData) ? topCategoriesData : (topCategoriesData?.categories || []);
     const tree = buildCategoryTree(raw);
     return [...tree]
       .sort((a, b) => (b.productCount || 0) - (a.productCount || 0))
@@ -125,8 +126,8 @@ export default function Hero({ initialData, categoriesData, flashSaleData }) {
             {/* Category Rows */}
             <div className="flex-1 py-2 overflow-y-auto no-scrollbar space-y-1.5">
               {/* Dynamic Root Categories */}
-              {isCategoriesLoading ? (
-                Array.from({ length: 3 }).map((_, idx) => (
+              {isCategoriesLoading && topCategories.length === 0 ? (
+                Array.from({ length: 4 }).map((_, idx) => (
                   <div key={idx} className="flex items-center justify-between p-2 animate-pulse">
                     <div className="flex items-center gap-2.5">
                       <div className="size-8 rounded-lg bg-zinc-200 dark:bg-zinc-800" />
