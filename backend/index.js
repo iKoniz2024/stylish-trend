@@ -55,17 +55,25 @@ app.use(
 app.use(express.json({ limit: "10mb" }));
 app.use(cookieParser());
 
-// Cache headers middleware for APIs - optimize public routes for fast edge/browser delivery, while keeping private routes secure
+// Cache headers middleware for APIs - dynamic product/inventory/order routes never use stale cache
 app.use((req, res, next) => {
     if (req.method === "GET") {
         const hasAuth = Boolean(req.headers.authorization || req.cookies?.token);
-        if (hasAuth || req.path.startsWith("/api/auth") || req.path.startsWith("/api/cart") || req.path.startsWith("/api/orders")) {
+        const isDynamicRoute = 
+            hasAuth || 
+            req.path.startsWith("/api/auth") || 
+            req.path.startsWith("/api/cart") || 
+            req.path.startsWith("/api/orders") ||
+            req.path.startsWith("/api/products") ||
+            req.path.startsWith("/products");
+
+        if (isDynamicRoute) {
             res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, private");
             res.setHeader("Pragma", "no-cache");
             res.setHeader("Expires", "0");
         } else {
-            // Public catalog data (categories, settings, banners, public products)
-            res.setHeader("Cache-Control", "public, s-maxage=60, stale-while-revalidate=300");
+            // Static catalog definitions (categories, settings, banners)
+            res.setHeader("Cache-Control", "public, s-maxage=30, stale-while-revalidate=60");
         }
     }
     next();

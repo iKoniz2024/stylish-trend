@@ -111,8 +111,10 @@ export default function ProductDetails({ children }) {
     queryKey: ["product", id],
     queryFn: () => getProductById(id),
     enabled: !!id,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 1000 * 5, // 5 seconds fresh stock
     gcTime: 15 * 60 * 1000,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
   });
 
   usePageTitle(product?.title || "Product Details");
@@ -350,6 +352,23 @@ export default function ProductDetails({ children }) {
               {hasDiscount && (
                 <span className="text-base text-muted-foreground line-through">
                   {formatBDT(product.price)}
+                </span>
+              )}
+            </div>
+
+            {/* Live Stock Indicator */}
+            <div className="flex items-center gap-2">
+              {product.stock <= 0 || product.availabilityStatus === "Out of Stock" ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-500/10 px-3 py-1 text-xs font-bold text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                  <span className="size-2 rounded-full bg-rose-500" /> Out of Stock
+                </span>
+              ) : product.stock <= 5 ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1 text-xs font-bold text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                  <span className="size-2 rounded-full bg-amber-500 animate-pulse" /> Only {product.stock} left in stock - order soon!
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                  <span className="size-2 rounded-full bg-emerald-500" /> In Stock ({product.stock} available)
                 </span>
               )}
             </div>

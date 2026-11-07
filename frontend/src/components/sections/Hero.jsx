@@ -43,18 +43,20 @@ export default function Hero({ initialData, categoriesData, flashSaleData }) {
   const { data: bannerData, isLoading: isBannerLoading } = useQuery({
     queryKey: ["banners"],
     queryFn: getBanners,
-    initialData,
+    initialData: (Array.isArray(initialData) && initialData.length > 0) ? initialData : undefined,
     staleTime: 1000 * 60 * 1, // 1 minute cache
     gcTime: 1000 * 60 * 30,
+    refetchOnMount: true,
   });
 
   // Flash Sale query for Right Promo Card
   const { data: flashData, isLoading: isFlashLoading } = useQuery({
     queryKey: ["flash-sale"],
     queryFn: getFlashSaleProducts,
-    initialData: flashSaleData,
+    initialData: (flashSaleData?.products?.length > 0) ? flashSaleData : undefined,
     staleTime: 1000 * 60 * 1, // 1 minute cache
     gcTime: 1000 * 60 * 30,
+    refetchOnMount: true,
   });
 
   // Featured Vendor query
@@ -210,7 +212,7 @@ export default function Hero({ initialData, categoriesData, flashSaleData }) {
 
           {/* ================= COLUMN 2 (CENTER): MAIN BANNER SLIDER ================= */}
           <div className="col-span-12 lg:col-span-6 flex flex-col justify-center h-[200px] xs:h-[240px] sm:h-[340px] lg:h-[440px] w-full">
-            {isBannerLoading ? (
+            {isBannerLoading && banners.length === 0 ? (
               <div className="flex size-full items-center justify-center rounded-2xl border border-border bg-muted/30">
                 <div className="size-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
               </div>
@@ -252,7 +254,25 @@ export default function Hero({ initialData, categoriesData, flashSaleData }) {
                   )}
                 </Swiper>
               </div>
-            ) : null}
+            ) : (
+              <div className="relative overflow-hidden rounded-2xl border border-zinc-200/80 dark:border-white/[0.08] shadow-xs size-full bg-gradient-to-tr from-zinc-950 via-zinc-900 to-zinc-800 text-white flex flex-col justify-center items-start p-6 sm:p-10">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 mb-3">
+                  <Sparkles className="size-3.5" /> Featured Collections
+                </span>
+                <h2 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight text-white max-w-md leading-tight mb-2">
+                  Upgrade Your Style With Premium Trends
+                </h2>
+                <p className="text-xs sm:text-sm text-zinc-300 max-w-sm mb-5 leading-relaxed">
+                  Discover top quality apparel, footwear, accessories & everyday essentials with fast home delivery across Bangladesh.
+                </p>
+                <Link
+                  href="/products"
+                  className="rounded-full bg-white text-black hover:bg-zinc-200 px-6 py-2.5 text-xs sm:text-sm font-bold transition-all shadow-md active:scale-95 flex items-center gap-2"
+                >
+                  Shop Now <ArrowUpRight className="size-4" />
+                </Link>
+              </div>
+            )}
           </div>
 
           {/* ================= COLUMN 3 (RIGHT): FLASH DEAL SHOWCASE CARD ================= */}

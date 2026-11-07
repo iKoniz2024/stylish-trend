@@ -30,9 +30,30 @@ async function connectDB() {
         isInitialized = true;
         setupIndexes(db).catch(err => console.error("Setup indexes error:", err));
         warmUpCache(db).catch(err => console.error("Startup warmup error:", err));
+        syncInventoryStatus(db).catch(err => console.error("Inventory sync error:", err));
     }
 
     return db;
+}
+
+async function syncInventoryStatus(db) {
+    if (!db) return;
+    try {
+        const productsCollection = db.collection("products");
+        await Promise.all([
+            productsCollection.updateMany(
+                { stock: { $gt: 0 }, availabilityStatus: { $ne: "In Stock" } },
+                { $set: { availabilityStatus: "In Stock" } }
+            ),
+            productsCollection.updateMany(
+                { stock: { $lte: 0 }, availabilityStatus: { $ne: "Out of Stock" } },
+                { $set: { availabilityStatus: "Out of Stock" } }
+            ),
+        ]);
+        console.log("Inventory availability statuses synced with actual stock");
+    } catch (err) {
+        console.error("Error syncing inventory status:", err);
+    }
 }
 
 function getDB() {

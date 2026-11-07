@@ -420,7 +420,10 @@ const getSingleProduct = async (req, res) => {
             return res.status(404).send({ message: "Product not found" });
         }
 
-        res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
+        const currentStock = Number(result.stock ?? 0);
+        result.availabilityStatus = currentStock > 0 ? "In Stock" : "Out of Stock";
+
+        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
         res.send(result);
     } catch (error) {
         console.error(error);
@@ -463,7 +466,10 @@ const updateProduct = async (req, res) => {
             ...(req.body.variants !== undefined && { variants: Array.isArray(req.body.variants) ? req.body.variants : [] }),
             ...(req.body.price !== undefined && { price: Number(req.body.price) }),
             ...(req.body.discountPercentage !== undefined && { discountPercentage: Number(req.body.discountPercentage) }),
-            ...(req.body.stock !== undefined && { stock: Number(req.body.stock) }),
+            ...(req.body.stock !== undefined && { 
+                stock: Math.max(0, Number(req.body.stock)),
+                availabilityStatus: Number(req.body.stock) > 0 ? "In Stock" : "Out of Stock"
+            }),
             ...(req.body.weight !== undefined && { weight: Number(req.body.weight) }),
             ...(req.body.minimumOrderQuantity !== undefined && { minimumOrderQuantity: Number(req.body.minimumOrderQuantity) }),
             "meta.updatedAt": new Date()
@@ -475,7 +481,7 @@ const updateProduct = async (req, res) => {
         );
 
         clearCache("products");
-        clearCache("categoriesWithCounts");
+        clearCache("all");
         res.send({ message: "Product updated successfully" });
 
     } catch (error) {

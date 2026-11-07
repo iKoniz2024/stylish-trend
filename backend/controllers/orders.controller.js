@@ -66,11 +66,12 @@ const createOrder = async (req, res) => {
         }
 
         for (const item of rawCart) {
-            if (item.stock === 0 || item.availabilityStatus === "Out of Stock") {
+            const currentStock = Number(item.stock ?? 0);
+            if (currentStock <= 0) {
                 return res.status(400).send({ message: `${item.title} is out of stock` });
             }
-            if (item.quantity > item.stock) {
-                return res.status(400).send({ message: `Only ${item.stock} ${item.title} available in stock` });
+            if (item.quantity > currentStock) {
+                return res.status(400).send({ message: `Only ${currentStock} ${item.title} available in stock` });
             }
         }
 
@@ -131,7 +132,9 @@ const createOrder = async (req, res) => {
                     { $inc: { stock: -item.quantity } }
                 )
             )
-        ]).catch(err => console.error("Error updating stock/cart:", err));
+        ]).then(() => {
+            productsCollection.updateMany({ stock: { $lte: 0 } }, { $set: { availabilityStatus: "Out of Stock" } }).catch(() => {});
+        }).catch(err => console.error("Error updating stock/cart:", err));
 
         // Send response immediately to user
         res.status(201).send({
@@ -185,12 +188,13 @@ const createGuestOrder = async (req, res) => {
                 return res.status(404).send({ message: "Product not found" });
             }
 
-            if (product.stock === 0 || product.availabilityStatus === "Out of Stock") {
+            const currentStock = Number(product.stock ?? 0);
+            if (currentStock <= 0) {
                 return res.status(400).send({ message: `${product.title} is out of stock` });
             }
 
-            if (item.quantity > product.stock) {
-                return res.status(400).send({ message: `Only ${product.stock} ${product.title} available in stock` });
+            if (item.quantity > currentStock) {
+                return res.status(400).send({ message: `Only ${currentStock} ${product.title} available in stock` });
             }
 
             const effectivePrice = product.discountPercentage > 0
@@ -251,7 +255,9 @@ const createGuestOrder = async (req, res) => {
                     { $inc: { stock: -item.quantity } }
                 )
             )
-        ).catch(err => console.error("Error updating product stock:", err));
+        ).then(() => {
+            productsCollection.updateMany({ stock: { $lte: 0 } }, { $set: { availabilityStatus: "Out of Stock" } }).catch(() => {});
+        }).catch(err => console.error("Error updating product stock:", err));
 
         // Return HTTP 201 response immediately to the user
         res.status(201).send({

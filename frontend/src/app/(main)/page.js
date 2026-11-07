@@ -5,7 +5,7 @@ export const metadata = {
   title: "Home",
 };
 
-export const revalidate = 60;
+export const revalidate = 0;
 
 async function fetchHomeData() {
   const baseUrl = getApiUrl();
@@ -13,7 +13,7 @@ async function fetchHomeData() {
   const fetchSafeJson = async (url, fallback) => {
     try {
       const res = await fetch(url, {
-        next: { revalidate: 60 },
+        cache: "no-store",
         signal: AbortSignal.timeout(1200),
       });
       if (res.ok) {

@@ -213,9 +213,19 @@ export default function ProductCard({ product, index, badge }) {
                     </span>
                   )}
                 </div>
-                <span className="text-[9px] sm:text-[10px] text-muted-foreground font-semibold shrink-0">
-                  {product.stock || 0} in stock
-                </span>
+                {product.stock <= 0 || product.availabilityStatus === "Out of Stock" ? (
+                  <span className="text-[9px] sm:text-[10px] text-rose-600 dark:text-rose-400 font-bold shrink-0">
+                    Out of Stock
+                  </span>
+                ) : product.stock <= 5 ? (
+                  <span className="text-[9px] sm:text-[10px] text-amber-600 dark:text-amber-400 font-bold shrink-0">
+                    {product.stock} in stock
+                  </span>
+                ) : (
+                  <span className="text-[9px] sm:text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold shrink-0">
+                    {product.stock} in stock
+                  </span>
+                )}
               </div>
             </div>
 

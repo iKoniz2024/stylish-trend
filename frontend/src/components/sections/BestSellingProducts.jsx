@@ -38,8 +38,10 @@ export default function BestSellingProducts({ initialData }) {
     queryKey: ["best-selling-products"],
     queryFn: getBestSellingProducts,
     initialData: (initialData?.products?.length > 0) ? initialData : undefined,
-    staleTime: 1000 * 60 * 1, // 1 minute cache
+    staleTime: 1000 * 5, // 5 seconds fresh live stock
     gcTime: 1000 * 60 * 30,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
   });
 
   const bestSellingProducts = data?.products ?? [];

@@ -101,8 +101,10 @@ const clearCache = (keyOrPrefix) => {
             cache.delete(key);
         } else if ((lowerPattern === "products" || lowerPattern === "categories") && lowerKey.includes("categorieswithcounts")) {
             cache.delete(key);
-        } else if ((lowerPattern === "products" || lowerPattern === "orders") && lowerKey.includes("bestselling")) {
-            cache.delete(key);
+        } else if (lowerPattern === "products" || lowerPattern === "orders") {
+            if (lowerKey.includes("bestselling") || lowerKey.includes("newarrivals") || lowerKey.includes("flashsale") || lowerKey.includes("featured")) {
+                cache.delete(key);
+            }
         }
     }
 };
